@@ -3,3 +3,7 @@ node_modules
 
 # settings
 .claude/
+
+# build
+dist/
+build/
