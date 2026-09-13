@@ -24,18 +24,24 @@ export type PartyMsg =
 // plan or expressturn.com. Sign up, copy 3 values, paste below, redeploy.
 // ─────────────────────────────────────────────────────────────────────────
 const HARDCODED_TURN: RTCIceServer[] = [
+  { urls: 'stun:stun.relay.metered.ca:80' },
   {
-    urls: 'turn:phattar4phan.metered.live:3478',
+    urls: 'turn:global.relay.metered.ca:80',
     username: '7123a723780c76a855c716fd',
     credential: 'rUFvBI95I7posmyq',
   },
   {
-    urls: 'turn:phattar4phan.metered.live:443',
+    urls: 'turn:global.relay.metered.ca:80?transport=tcp',
     username: '7123a723780c76a855c716fd',
     credential: 'rUFvBI95I7posmyq',
   },
   {
-    urls: 'turns:phattar4phan.metered.live:443?transport=tcp',
+    urls: 'turn:global.relay.metered.ca:443',
+    username: '7123a723780c76a855c716fd',
+    credential: 'rUFvBI95I7posmyq',
+  },
+  {
+    urls: 'turns:global.relay.metered.ca:443?transport=tcp',
     username: '7123a723780c76a855c716fd',
     credential: 'rUFvBI95I7posmyq',
   },
