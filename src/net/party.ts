@@ -1,6 +1,11 @@
 // Party transport: BroadcastChannel (same browser, instant) + PeerJS WebRTC
 // (cross-device via free public signaling). Host's device is the server —
 // the host tab runs the world, the guest mirrors it. Same API for both.
+//
+// The public broker is shared worldwide, so the PIN alone can collide with
+// another player's peer id. Host re-registers with -1..-5 suffixes; the
+// guest scans for them. Retry loops keep both sides alive through broker
+// hiccups.
 import Peer from 'peerjs'
 import type { DataConnection } from 'peerjs'
 import type { Snap, RemoteInput, GuestAct } from '../game/engine'
@@ -12,57 +17,139 @@ export type PartyMsg =
   | { kind: 'act'; act: GuestAct }
   | { kind: 'snap'; snap: Snap }
 
-const peerId = (pin: string) => `stranger-party-${pin}`
+const ICE = {
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+    ],
+  },
+  debug: 0 as const,
+}
+
+const peerId = (pin: string, suffix: number) =>
+  suffix === 0 ? `stranger-party-${pin}` : `stranger-party-${pin}-${suffix}`
+const MAX_SUFFIX = 9
 
 export class Party {
   private peer: Peer | null = null
   private conn: DataConnection | null = null
   private bc: BroadcastChannel | null = null
   private dead = false
+  private suffix = 0
+  private guestTarget = 0
+  private helloTimer: ReturnType<typeof setInterval> | null = null
   onMsg: (m: PartyMsg) => void = () => {}
   onError: (e: string) => void = () => {}
+  onStatus: (s: 'connecting' | 'waiting' | 'ok' | 'error') => void = () => {}
 
   constructor(
     readonly pin: string,
     readonly role: 'host' | 'guest',
   ) {
     // lane 1: same-browser tabs
-    this.bc = new BroadcastChannel(`stranger-bc-${pin}`)
-    this.bc.onmessage = (e) => this.handle(e.data as PartyMsg)
+    try {
+      this.bc = new BroadcastChannel(`stranger-bc-${pin}`)
+      this.bc.onmessage = (e) => this.handle(e.data as PartyMsg)
+    } catch {
+      this.bc = null
+    }
     window.addEventListener('beforeunload', this.bye)
 
     // lane 2: WebRTC via PeerJS public broker (cross-device)
-    if (role === 'host') {
-      this.peer = new Peer(peerId(pin))
-      this.peer.on('error', (e) => this.onError(e.type))
+    this.openPeer()
+  }
+
+  private openPeer() {
+    if (this.dead) return
+    this.onStatus('connecting')
+    try {
+      this.peer = this.role === 'host' ? new Peer(peerId(this.pin, this.suffix), ICE) : new Peer(ICE)
+    } catch (e) {
+      this.onError('peer-init-failed')
+      return
+    }
+    this.peer.on('error', (e) => this.onPeerError(e.type))
+    if (this.role === 'host') {
+      this.onStatus('waiting')
       this.peer.on('connection', (conn) => {
-        // one guest only
         if (this.conn && this.conn.open) {
           conn.close()
           return
         }
         this.conn = conn
         conn.on('data', (d) => this.handle(d as PartyMsg))
-        conn.on('open', () => {
-          // guest says hello over webrtc — answer like on the bc lane
-        })
         conn.on('close', () => {
           if (this.conn === conn) this.conn = null
         })
       })
     } else {
-      this.peer = new Peer()
-      this.peer.on('error', (e) => this.onError(e.type))
-      this.peer.on('open', () => {
-        const conn = this.peer!.connect(peerId(pin))
-        this.conn = conn
-        conn.on('data', (d) => this.handle(d as PartyMsg))
-        conn.on('open', () => this.send({ kind: 'hello' }))
-        conn.on('close', () => {
-          if (this.conn === conn) this.conn = null
-        })
-      })
+      this.peer.on('open', () => this.dial())
     }
+  }
+
+  private dial() {
+    if (this.dead || !this.peer) return
+    this.onStatus('connecting')
+    const conn = this.peer.connect(peerId(this.pin, this.guestTarget))
+    this.conn = conn
+    conn.on('data', (d) => this.handle(d as PartyMsg))
+    conn.on('open', () => {
+      this.onStatus('ok')
+      this.send({ kind: 'hello' })
+      // heartbeat hello: if the lane dies, reconnect
+      if (this.helloTimer) clearInterval(this.helloTimer)
+      this.helloTimer = setInterval(() => {
+        if (!this.conn || !this.conn.open) {
+          if (this.helloTimer) clearInterval(this.helloTimer)
+          if (!this.dead) this.dial()
+        }
+      }, 3000)
+    })
+  }
+
+  private onPeerError(type: string) {
+    if (this.dead) return
+    if (type === 'unavailable-id') {
+      // someone worldwide already holds this pin's peer id — shift suffix
+      if (this.role === 'host' && this.suffix < MAX_SUFFIX) {
+        this.suffix++
+        try {
+          this.peer?.destroy()
+        } catch {
+          /* */
+        }
+        this.openPeer()
+        return
+      }
+      this.onError(type)
+      return
+    }
+    if (type === 'peer-unavailable') {
+      // guest: PIN exists but this target isn't there (or wrong suffix) — scan on
+      if (this.role === 'guest') {
+        this.guestTarget = (this.guestTarget + 1) % (MAX_SUFFIX + 1)
+        this.onError('peer-unavailable')
+        setTimeout(() => {
+          if (!this.dead && (!this.conn || !this.conn.open)) this.dial()
+        }, 1500)
+        return
+      }
+    }
+    // network / broker errors: rebuild after a pause
+    this.onError(type)
+    setTimeout(() => {
+      if (!this.dead && (!this.conn || !this.conn.open)) {
+        try {
+          this.peer?.destroy()
+        } catch {
+          /* */
+        }
+        this.openPeer()
+      }
+    }, 2500)
   }
 
   private handle(m: PartyMsg) {
@@ -93,6 +180,7 @@ export class Party {
   destroy() {
     if (this.dead) return
     this.dead = true
+    if (this.helloTimer) clearInterval(this.helloTimer)
     window.removeEventListener('beforeunload', this.bye)
     try {
       this.conn?.close()

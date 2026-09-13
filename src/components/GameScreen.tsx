@@ -672,12 +672,15 @@ function GuiltOverlay({ onContinue }: { onContinue: () => void }) {
   const done = step >= 3
   return (
     <div
-      className="absolute inset-0 z-40 bg-black flex flex-col items-center justify-center text-center px-6 cursor-pointer"
+      className="absolute inset-0 z-40 bg-black flex flex-col items-center justify-center text-center px-6 gap-6 cursor-pointer"
       onClick={() => !done && setStep((s) => s + 1)}
     >
-      {!done ? (
-        <p className="text-lg text-red-400 slowfadein leading-10">{lines[step]}</p>
-      ) : (
+      {lines.slice(0, Math.min(step + 1, 3)).map((l, i) => (
+        <p key={i} className="text-lg text-red-400 fadein leading-10">
+          {l}
+        </p>
+      ))}
+      {done && (
         <div className="fadein">
           <p className="text-[11px] text-neutral-300 leading-7 mb-10">
             เล่นต่อไป จนกว่าเกมจะจบ

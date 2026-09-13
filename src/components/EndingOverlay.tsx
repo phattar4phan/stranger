@@ -57,7 +57,6 @@ export default function EndingOverlay({
     )
   }
 
-  const line = lines[Math.min(step, lines.length - 1)]
   const last = step >= lines.length - 1
 
   // auto-advance: each slide lingers 0.25s longer than the one before
@@ -69,21 +68,24 @@ export default function EndingOverlay({
 
   return (
     <div
-      className="absolute inset-0 z-40 bg-black/90 flex flex-col items-center justify-center text-center px-6 cursor-pointer"
+      className="absolute inset-0 z-40 bg-black/90 flex flex-col items-center justify-center text-center px-6 cursor-pointer gap-4"
       onClick={() => !last && setStep((s) => s + 1)}
     >
-      <p
-        className={
-          line.tone === 'neutral'
-            ? 'text-xl text-neutral-100 leading-9'
-            : line.tone === 'light'
-              ? 'text-[13px] text-green-300 leading-8 max-w-lg'
-              : 'text-[13px] text-neutral-400 leading-8 max-w-lg'
-        }
-      >
-        {line.text}
-      </p>
-
+      {/* lines stack up one after another */}
+      {lines.slice(0, Math.min(step, lines.length - 1) + 1).map((l, i) => (
+        <p
+          key={i}
+          className={
+            l.tone === 'neutral'
+              ? 'text-xl text-neutral-100 leading-9 fadein'
+              : l.tone === 'light'
+                ? 'text-[13px] text-green-300 leading-8 max-w-lg fadein'
+                : 'text-[13px] text-neutral-400 leading-8 max-w-lg fadein'
+          }
+        >
+          {l.text}
+        </p>
+      ))}
       {last ? (
         <div className="mt-12">
           <p className="text-[8px] text-neutral-600 mb-6">

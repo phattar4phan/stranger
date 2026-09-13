@@ -18,6 +18,7 @@ export default function JoinPartyScreen({
   )
   const [stage, setStage] = useState<'pin' | 'name'>('pin')
   const [state, setState] = useState<'input' | 'waiting' | 'ok'>('input')
+  const [err, setErr] = useState('')
   const [name, setName] = useState(initialName ?? '')
   const partyRef = useRef<Party | null>(null)
   const retryRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -50,9 +51,10 @@ export default function JoinPartyScreen({
         setTimeout(() => setStage('name'), 700)
       }
     }
+    p.onError = (e) => setErr(e)
     // keep asking until the host answers — no timeout
-    p.send({ kind: 'hello' })
-    retryRef.current = setInterval(() => p.send({ kind: 'hello' }), 1000)
+    p.send({ kind: 'hello', name: name.trim() || 'ผู้เล่น 2' })
+    retryRef.current = setInterval(() => p.send({ kind: 'hello', name: name.trim() || 'ผู้เล่น 2' }), 1000)
   }
 
   const confirmName = () => {
@@ -91,7 +93,10 @@ export default function JoinPartyScreen({
             ))}
           </div>
           {state === 'waiting' && (
-            <p className="text-[10px] text-neutral-500 blink">กำลังเชื่อมต่อ...</p>
+            <p className="text-[10px] text-neutral-500 blink">
+              กำลังเชื่อมต่อ...
+              {err && <span className="text-neutral-600"> ({err})</span>}
+            </p>
           )}
           {state === 'ok' && (
             <p className="text-[10px] text-green-400 blink">เชื่อมต่อสำเร็จ</p>

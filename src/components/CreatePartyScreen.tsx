@@ -16,6 +16,7 @@ export default function CreatePartyScreen({
   const [pin] = useState(initialPin ?? makePin())
   const [name, setName] = useState(initialName ?? '')
   const [connected, setConnected] = useState(false)
+  const [err, setErr] = useState('')
   const partyRef = useRef<Party | null>(null)
   const nameRef = useRef('')
   nameRef.current = name
@@ -29,6 +30,8 @@ export default function CreatePartyScreen({
         setTimeout(() => onStart(pin, nameRef.current.trim() || 'ผู้เล่น 1'), 900)
       }
     }
+    p.onError = (e) => setErr(e)
+    p.onStatus = (s) => setErr(s === 'waiting' ? '' : s)
     return () => {
       p.destroy()
       partyRef.current = null
@@ -61,7 +64,10 @@ export default function CreatePartyScreen({
       {connected ? (
         <p className="text-[10px] text-green-400 blink">เพื่อนมาแล้ว — กำลังเข้าเกม...</p>
       ) : (
-        <p className="text-[10px] text-neutral-500 blink">กำลังรอเพื่อน...</p>
+        <p className="text-[10px] text-neutral-500 blink">
+          กำลังรอเพื่อน...
+          {err && <span className="text-neutral-600"> ({err})</span>}
+        </p>
       )}
       <button onClick={onBack} className="corner-btn text-sm text-neutral-400 hover:text-white px-6 py-2 w-80 text-center">
         กลับ
