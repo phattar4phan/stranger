@@ -49,6 +49,9 @@ type Ending = {
   role: 'host' | 'guest'
 }
 
+type PanelState = 'closed' | 'open' | 'closing'
+type DeathReason = 'neglect' | 'attacked' | 'mosquito' | 'starved' | 'killed'
+
 const SELLABLE: Item[] = ['strawberry', 'blueberry', 'wood', 'stone', 'mushroom']
 
 // pixel icon chips, shared by inventory slots and trade panels
@@ -78,7 +81,35 @@ const Icon = ({ k, size = 16 }: { k: Item | 'coin'; size?: number }) => (
   />
 )
 
-type DeathReason = 'neglect' | 'attacked' | 'mosquito' | 'starved' | 'killed'
+const hud0: HudState & { name: string; oppName: string } = {
+  timeLeft: GAME_DURATION,
+  day: 1,
+  dayLeft: 90,
+  coins: 0,
+  hp: 5,
+  maxHp: 5,
+  hunger: 5,
+  maxHunger: 5,
+  weaponTier: 0,
+  mode: 'collect',
+  p1: {
+    strawberry: 0,
+    blueberry: 0,
+    wood: 0,
+    stone: 0,
+    mushroom: 0,
+    steak: 0,
+    pork: 0,
+    beef: 0,
+    cake: 0,
+  },
+  p2Total: 0,
+  p2Alive: true,
+  distressActive: false,
+  toast: '',
+  name: '',
+  oppName: '',
+}
 
 export default function GameScreen({
   party,
@@ -90,13 +121,13 @@ export default function GameScreen({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameRef = useRef<Game | null>(null)
   const partyRef = useRef<Party | null>(null)
-  const hudRef = useRef(hud0)
   const role = party?.role ?? 'host'
   const isGuest = role === 'guest'
   const isHost = role === 'host'
   const myName = party?.myName ?? 'ผู้เล่น 1'
 
-  const [hud, setHud] = useState<HudState>(hud0)
+  const [hud, setHud] = useState<HudState & { name: string; oppName: string }>(hud0)
+  const hudRef = useRef(hud)
   hudRef.current = hud
   const [deathReason, setDeathReason] = useState<DeathReason | null>(null)
   const [deathDone, setDeathDone] = useState(false)
@@ -104,8 +135,11 @@ export default function GameScreen({
   const [p1Died, setP1Died] = useState(false)
   const [showDev, setShowDev] = useState(false)
   const [devMode, setDevMode] = useState(false)
+  const [sellState, setSellState] = useState<PanelState>('closed')
+  const [shopState, setShopState] = useState<PanelState>('closed')
+  const [fx, setFx] = useState<{ panel: 'sell' | 'shop'; n: number } | null>(null)
   const [ending, setEnding] = useState<Ending | null>(null)
-  let cleanupPump: ReturnType<typeof setInterval> | null = null
+  const cleanupRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -171,21 +205,19 @@ export default function GameScreen({
         if (isGuest && m.kind === 'snap') g.applySnap(m.snap)
       }
       if (isGuest) {
-        // tell the host who we are (again, once the game channel is alive)
+        // tell the host who we are once the game channel is alive
         setTimeout(() => p.send({ kind: 'hello', name: myName }), 300)
       }
       if (isHost) {
-        const pump = setInterval(
+        cleanupRef.current = setInterval(
           () => partyRef.current?.send({ kind: 'snap', snap: g.getSnap() }),
           66,
         )
-        cleanupPump = pump
       } else {
-        const pump = setInterval(
+        cleanupRef.current = setInterval(
           () => partyRef.current?.send({ kind: 'input', input: g.readInput() }),
           50,
         )
-        cleanupPump = pump
       }
     }
 
@@ -194,25 +226,22 @@ export default function GameScreen({
       gameRef.current = null
       partyRef.current?.destroy()
       partyRef.current = null
-      if (cleanupPump) clearInterval(cleanupPump)
+      if (cleanupRef.current) clearInterval(cleanupRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const tradeFx = (panel: 'sell' | 'shop') => setFx({ panel, n: Date.now() })
-  const [sellState, setSellState] = useState<'closed' | 'open' | 'closing'>('closed')
-  const [shopState, setShopState] = useState<'closed' | 'open' | 'closing'>('closed')
-  const [fx, setFx] = useState<{ panel: 'sell' | 'shop'; n: number } | null>(null)
 
-  const closePanel = (set: (v: 'closed' | 'open' | 'closing') => void) => {
+  const closePanel = (set: (v: PanelState) => void) => {
     set('closing')
     setTimeout(() => set('closed'), 500)
   }
   const openPanel = (
-    cur: 'closed' | 'open' | 'closing',
-    set: (v: 'closed' | 'open' | 'closing') => void,
-    otherCur: 'closed' | 'open' | 'closing',
-    setOther: (v: 'closed' | 'open' | 'closing') => void,
+    cur: PanelState,
+    set: (v: PanelState) => void,
+    otherCur: PanelState,
+    setOther: (v: PanelState) => void,
   ) => {
     if (cur === 'open') {
       closePanel(set)
@@ -223,7 +252,7 @@ export default function GameScreen({
   }
 
   const selfName = isGuest ? `คุณ (${myName})` : `คุณ (${hud.name || myName})`
-  const oppName = isGuest ? hud.oppName || 'ผู้เล่น 1' : hud.oppName || 'ผู้เล่น 2'
+  const oppName = hud.oppName || (isGuest ? 'ผู้เล่น 1' : 'ผู้เล่น 2')
   const anyOverlay = deathReason !== null || p1Died || ending !== null
 
   return (
@@ -296,7 +325,7 @@ export default function GameScreen({
           </div>
         )}
 
-        {/* inventory tabs — collector / fighter */}
+        {/* inventory tabs */}
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex gap-2">
           <button
             onClick={() => gameRef.current?.setMode('collect')}
@@ -320,7 +349,7 @@ export default function GameScreen({
           </button>
         </div>
 
-        {/* inventory slots — perfectly square tiles */}
+        {/* inventory slots */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-none">
           {ICONS.filter(
             (pair): pair is [Item, string] => pair[0] !== 'coin' && pair[0] !== 'mushroom',
@@ -358,7 +387,8 @@ export default function GameScreen({
                 <button
                   key={it}
                   onClick={() => {
-                    if (isGuest) partyRef.current?.send({ kind: 'act', act: { act: 'sell', arg: it } })
+                    if (isGuest)
+                      partyRef.current?.send({ kind: 'act', act: { act: 'sell', arg: it } })
                     else gameRef.current?.sell(it)
                     tradeFx('sell')
                   }}
@@ -395,7 +425,8 @@ export default function GameScreen({
               {hud.weaponTier < WEAPONS.length - 1 ? (
                 <button
                   onClick={() => {
-                    if (isGuest) partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: 'weapon' } })
+                    if (isGuest)
+                      partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: 'weapon' } })
                     else gameRef.current?.buy('weapon')
                     tradeFx('shop')
                   }}
@@ -403,7 +434,9 @@ export default function GameScreen({
                 >
                   <span className="text-[14px] leading-none">{WEAPONS[hud.weaponTier].icon}</span>
                   <span className="text-neutral-500">→</span>
-                  <span className="text-[14px] leading-none">{WEAPONS[hud.weaponTier + 1].icon}</span>
+                  <span className="text-[14px] leading-none">
+                    {WEAPONS[hud.weaponTier + 1].icon}
+                  </span>
                   <span className="text-[10px] text-neutral-300">
                     {THAI_WEAPON[hud.weaponTier + 1]} · {WEAPONS[hud.weaponTier + 1].dmg} ดาเมจ
                   </span>
@@ -421,7 +454,8 @@ export default function GameScreen({
               )}
               <button
                 onClick={() => {
-                  if (isGuest) partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: 'hp' } })
+                  if (isGuest)
+                    partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: 'hp' } })
                   else gameRef.current?.buy('hp')
                   tradeFx('shop')
                 }}
@@ -435,7 +469,8 @@ export default function GameScreen({
               </button>
               <button
                 onClick={() => {
-                  if (isGuest) partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: 'hunger' } })
+                  if (isGuest)
+                    partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: 'hunger' } })
                   else gameRef.current?.buy('hunger')
                   tradeFx('shop')
                 }}
@@ -451,7 +486,8 @@ export default function GameScreen({
                 <button
                   key={f}
                   onClick={() => {
-                    if (isGuest) partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: f } })
+                    if (isGuest)
+                      partyRef.current?.send({ kind: 'act', act: { act: 'buy', arg: f } })
                     else gameRef.current?.buy(f)
                     tradeFx('shop')
                   }}
@@ -480,12 +516,12 @@ export default function GameScreen({
           />
         )}
 
-        {/* distress prompt — host (PLAYER 1) decides */}
+        {/* distress prompt — host decides */}
         {hud.distressActive && deathReason === null && !isGuest && (
           <div className="absolute inset-0 flex items-end justify-center pb-16 bg-black/40 z-30">
             <div className="bg-black/90 border-2 border-red-800 p-4 text-center">
               <p className="text-[10px] text-red-300 mb-3">
-                {hud.oppName || 'ผู้เล่น 2'} ล้มลง เค้าหิวมาก
+                {oppName} ล้มลง เค้าหิวมาก
                 <br />
                 เค้าต้องการอาหาร 1 ชิ้น
               </p>
@@ -507,7 +543,7 @@ export default function GameScreen({
           </div>
         )}
 
-        {/* P2 died — killed by P1: host gets the guilt credits */}
+        {/* P2 killed by P1 — host gets the guilt credits */}
         {deathReason === 'attacked' && isHost && (
           <GuiltOverlay
             onContinue={() => {
@@ -518,15 +554,15 @@ export default function GameScreen({
           />
         )}
 
-        {/* P2 died — killed by P1: guest sees their own end */}
+        {/* P2 killed by P1 — guest sees their own end */}
         {deathReason === 'attacked' && isGuest && (
-          <P2KilledScreen p1Name={hud.oppName || 'ผู้เล่น 1'} onExit={onExit} />
+          <P2KilledScreen p1Name={oppName} onExit={onExit} />
         )}
 
-        {/* P2 died by neglect/mosquito/starve: full reveal sequence for host */}
+        {/* P2 died other ways — reveal sequence */}
         {deathReason !== null && deathReason !== 'attacked' && isHost && (
           <DeathSequence
-            p2Name={hud.oppName || 'ผู้เล่น 2'}
+            p2Name={oppName}
             onContinue={() => {
               setDeathReason(null)
               setDeathDone(true)
@@ -534,8 +570,6 @@ export default function GameScreen({
             }}
           />
         )}
-
-        {/* same for the dead guest — they watch their own story */}
         {deathReason !== null && deathReason !== 'attacked' && isGuest && (
           <DeathSequence
             p2Name={myName}
@@ -549,22 +583,19 @@ export default function GameScreen({
 
         {/* note after death reveal, while game continues */}
         {deathDone && !ending && (
-          <div className="absolute top-[72px] left-1/2 -translate-x-1/2 text-[9px] text-neutral-400 bg-black/70 px-2 py-1 pointer-events-none">
+          <div className="absolute top-18 left-1/2 -translate-x-1/2 text-[9px] text-neutral-400 bg-black/70 px-2 py-1 pointer-events-none">
             นาฬิกายังเดินอยู่
           </div>
         )}
 
         {/* P1 died — host sees their own ending, exit only */}
         {p1Died && isHost && !ending && (
-          <P1DeathHostScreen reason={p1DeathReason} p2Name={hud.oppName || 'ผู้เล่น 2'} onExit={onExit} />
+          <P1DeathHostScreen reason={p1DeathReason} p2Name={oppName} onExit={onExit} />
         )}
 
         {/* P1 died — guest keeps playing */}
         {p1Died && isGuest && !ending && (
-          <P1DeathGuestScreen
-            p1Name={hud.oppName || 'ผู้เล่น 1'}
-            onContinue={() => setP1Died(false)}
-          />
+          <P1DeathGuestScreen p1Name={oppName} onContinue={() => setP1Died(false)} />
         )}
 
         {/* settings gear */}
@@ -622,6 +653,30 @@ export default function GameScreen({
                 >
                   จำลอง: ผู้เล่น 2 ฆ่าผู้เล่น 1
                 </button>
+                <label className="mt-2 text-neutral-500 flex flex-col gap-1">
+                  TURN server (JSON) — แก้เครือข่ายผ่าน NAT
+                  <input
+                    id="turn-config"
+                    placeholder='[{"urls":"turn:host:3478","username":"u","credential":"p"}]'
+                    className="text-[8px] bg-black/60 border border-neutral-700 px-2 py-1 text-neutral-300 outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      const v = (document.getElementById('turn-config') as HTMLInputElement)
+                        ?.value
+                      if (!v) return
+                      try {
+                        localStorage.setItem('stranger-turn', v)
+                        location.reload()
+                      } catch {
+                        /* bad json */
+                      }
+                    }}
+                    className="border border-neutral-700 px-2 py-1 hover:bg-neutral-800 text-left"
+                  >
+                    บันทึก TURN + รีสตาร์ท
+                  </button>
+                </label>
               </div>
             )}
           </div>
@@ -634,29 +689,6 @@ export default function GameScreen({
   )
 }
 
-const hud0: HudState & { name: string; oppName: string } = {
-  timeLeft: GAME_DURATION,
-  day: 1,
-  dayLeft: 90,
-  coins: 0,
-  hp: 5,
-  maxHp: 5,
-  hunger: 5,
-  maxHunger: 5,
-  weaponTier: 0,
-  mode: 'collect',
-  p1: {
-    strawberry: 0, blueberry: 0, wood: 0, stone: 0,
-    mushroom: 0, steak: 0, pork: 0, beef: 0, cake: 0,
-  },
-  p2Total: 0,
-  p2Alive: true,
-  distressActive: false,
-  toast: '',
-  name: '',
-  oppName: '',
-}
-
 function GuiltOverlay({ onContinue }: { onContinue: () => void }) {
   const [step, setStep] = useState(0)
   useEffect(() => {
@@ -664,11 +696,7 @@ function GuiltOverlay({ onContinue }: { onContinue: () => void }) {
     const t = setTimeout(() => setStep((s) => s + 1), step === 2 ? 3200 : 2600)
     return () => clearTimeout(t)
   }, [step])
-  const lines = [
-    'คุณฆ่าเค้าทำไม',
-    'เค้าทำอะไรผิด',
-    'คุณไม่มีความเป็นมนุษย์แล้วหรอ',
-  ]
+  const lines = ['คุณฆ่าเค้าทำไม', 'เค้าทำอะไรผิด', 'คุณไม่มีความเป็นมนุษย์แล้วหรอ']
   const done = step >= 3
   return (
     <div
@@ -682,9 +710,7 @@ function GuiltOverlay({ onContinue }: { onContinue: () => void }) {
       ))}
       {done && (
         <div className="fadein">
-          <p className="text-[11px] text-neutral-300 leading-7 mb-10">
-            เล่นต่อไป จนกว่าเกมจะจบ
-          </p>
+          <p className="text-[11px] text-neutral-300 leading-7 mb-10">เล่นต่อไป จนกว่าเกมจะจบ</p>
           <button
             onClick={(e) => {
               e.stopPropagation()

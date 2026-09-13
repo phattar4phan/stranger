@@ -17,32 +17,56 @@ export type PartyMsg =
   | { kind: 'act'; act: GuestAct }
   | { kind: 'snap'; snap: Snap }
 
-const ICE = {
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      // TURN relays: STUN alone fails behind strict NAT (e.g. laptop <-> iPad)
-      {
-        urls: 'turn:openrelay.metered.ca:80',
-        username: 'openrelayproject',
-        credential: 'openrelayproject',
-      },
-      {
-        urls: 'turn:openrelay.metered.ca:443',
-        username: 'openrelayproject',
-        credential: 'openrelayproject',
-      },
-      {
-        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-        username: 'openrelayproject',
-        credential: 'openrelayproject',
-      },
-    ],
-    iceCandidatePoolSize: 4,
+// ICE config: keep it lean — every extra server slows discovery.
+//
+// ── HARDCODE YOUR TURN HERE ──────────────────────────────────────────────
+// Free TURN (static creds, never expire): metered.ca "TURN over Caas" free
+// plan or expressturn.com. Sign up, copy 3 values, paste below, redeploy.
+// ─────────────────────────────────────────────────────────────────────────
+const HARDCODED_TURN: RTCIceServer[] = [
+  {
+    urls: 'turn:phattar4phan.metered.live:3478',
+    username: '7123a723780c76a855c716fd',
+    credential: 'rUFvBI95I7posmyq',
   },
-  debug: 0 as const,
+  {
+    urls: 'turn:phattar4phan.metered.live:443',
+    username: '7123a723780c76a855c716fd',
+    credential: 'rUFvBI95I7posmyq',
+  },
+  {
+    urls: 'turns:phattar4phan.metered.live:443?transport=tcp',
+    username: '7123a723780c76a855c716fd',
+    credential: 'rUFvBI95I7posmyq',
+  },
+]
+
+// runtime override (dev panel) wins over the hardcode
+const DEFAULT_ICE: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+]
+
+const iceConfig = () => {
+  let servers = HARDCODED_TURN.length > 0 ? HARDCODED_TURN : DEFAULT_ICE
+  try {
+    const raw = localStorage.getItem('stranger-turn')
+    if (raw) servers = JSON.parse(raw)
+  } catch {
+    /* keep defaults */
+  }
+  return { config: { iceServers: servers }, debug: 0 as const }
 }
+const ICE = iceConfig()
 
 const peerId = (pin: string, suffix: number) =>
   suffix === 0 ? `stranger-party-${pin}` : `stranger-party-${pin}-${suffix}`
