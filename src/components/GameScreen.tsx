@@ -254,6 +254,32 @@ export default function GameScreen({
   const selfName = isGuest ? `คุณ (${myName})` : `คุณ (${hud.name || myName})`
   const oppName = hud.oppName || (isGuest ? 'ผู้เล่น 1' : 'ผู้เล่น 2')
   const anyOverlay = deathReason !== null || p1Died || ending !== null
+  // touch device? show on-screen controls
+  const [isTouch] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window),
+  )
+
+  const hold = (k: string) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      e.preventDefault()
+      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+      gameRef.current?.press(k)
+    },
+    onPointerUp: () => gameRef.current?.release(k),
+    onPointerCancel: () => gameRef.current?.release(k),
+    onPointerLeave: () => gameRef.current?.release(k),
+  })
+  const tap = (k: string) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      e.preventDefault()
+      gameRef.current?.press(k)
+    },
+  })
+
+  const touchBtn =
+    'w-14 h-14 bg-black/60 border-2 border-neutral-600 text-neutral-200 text-[11px] active:bg-neutral-700/90 select-none touch-none flex items-center justify-center'
 
   return (
     <div className="h-full w-full flex items-center justify-center bg-black">
@@ -596,6 +622,33 @@ export default function GameScreen({
         {/* P1 died — guest keeps playing */}
         {p1Died && isGuest && !ending && (
           <P1DeathGuestScreen p1Name={oppName} onContinue={() => setP1Died(false)} />
+        )}
+
+        {/* touch controls — only on touch devices */}
+        {isTouch && !anyOverlay && (
+          <>
+            {/* d-pad, bottom left */}
+            <div className="absolute bottom-4 left-4 z-20 grid grid-cols-3 grid-rows-3 gap-1 touch-none">
+              <span />
+              <button className={touchBtn} {...hold('w')}>▲</button>
+              <span />
+              <button className={touchBtn} {...hold('a')}>◀</button>
+              <span />
+              <button className={touchBtn} {...hold('d')}>▶</button>
+              <span />
+              <button className={touchBtn} {...hold('s')}>▼</button>
+              <span />
+            </div>
+            {/* actions, bottom right */}
+            <div className="absolute bottom-4 right-4 z-20 grid grid-cols-3 gap-1 touch-none">
+              <button className={touchBtn} {...hold('e')}>เก็บ</button>
+              <button className={touchBtn} {...hold('x')}>ตี</button>
+              <button className={touchBtn} {...tap('q')}>ขโมย</button>
+              <button className={touchBtn} {...tap('g')}>ให้</button>
+              <button className={touchBtn} {...tap('f')}>สลับ</button>
+              <button className={touchBtn} {...tap('h')}>ช่วย</button>
+            </div>
+          </>
         )}
 
         {/* settings gear */}

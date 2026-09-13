@@ -417,6 +417,53 @@ export class Game {
 
   // ---------- input ----------
 
+  private setRemoteKey(k: string, val: boolean) {
+    if (k === 'w' || k === 'arrowup') this.remote.u = val
+    if (k === 's' || k === 'arrowdown') this.remote.d = val
+    if (k === 'a' || k === 'arrowleft') this.remote.l = val
+    if (k === 'd' || k === 'arrowright') this.remote.r = val
+    if (k === 'e') this.remote.e = val
+    if (k === 'q') this.remote.q = val
+    if (k === 'x') this.remote.x = val
+  }
+
+  /** virtual key press — keyboard and touch controls both land here */
+  press(k: string) {
+    this.initAudio()
+    const k2 = k.toLowerCase()
+    if (this.guest) {
+      this.setRemoteKey(k2, true)
+      if (k2 === 'g') this.onAct?.({ act: 'give' })
+      if (this.phase === 'playing') {
+        if (k2 === '1') this.onAct?.({ act: 'eat', arg: 'steak' })
+        else if (k2 === '2') this.onAct?.({ act: 'eat', arg: 'pork' })
+        else if (k2 === '3') this.onAct?.({ act: 'eat', arg: 'beef' })
+        else if (k2 === '4') this.onAct?.({ act: 'eat', arg: 'cake' })
+      }
+      return
+    }
+    this.keys.add(k2)
+    if (k2 === 'f' && this.phase === 'playing') {
+      this.setMode(this.mode === 'collect' ? 'fight' : 'collect')
+    }
+    if (this.phase === 'playing') {
+      if (k2 === '1') this.eat('steak')
+      else if (k2 === '2') this.eat('pork')
+      else if (k2 === '3') this.eat('beef')
+      else if (k2 === '4') this.eat('cake')
+    }
+  }
+
+  /** virtual key release */
+  release(k: string) {
+    const k2 = k.toLowerCase()
+    if (this.guest) {
+      this.setRemoteKey(k2, false)
+      return
+    }
+    this.keys.delete(k2)
+  }
+
   private onKeyDown = (e: KeyboardEvent) => {
     const k = e.key.toLowerCase()
     if (
@@ -425,51 +472,12 @@ export class Game {
     ) {
       e.preventDefault()
     }
-    this.keys.add(k)
-    this.initAudio()
-    if (this.guest) {
-      // guest keys map straight onto the remote input vector
-      if (k === 'w' || k === 'arrowup') this.remote.u = true
-      if (k === 's' || k === 'arrowdown') this.remote.d = true
-      if (k === 'a' || k === 'arrowleft') this.remote.l = true
-      if (k === 'd' || k === 'arrowright') this.remote.r = true
-      if (k === 'e') this.remote.e = true
-      if (k === 'q') this.remote.q = true
-      if (k === 'x') this.remote.x = true
-      if (k === 'g') this.onAct?.({ act: 'give' })
-      if (this.phase === 'playing') {
-        if (k === '1') this.onAct?.({ act: 'eat', arg: 'steak' })
-        else if (k === '2') this.onAct?.({ act: 'eat', arg: 'pork' })
-        else if (k === '3') this.onAct?.({ act: 'eat', arg: 'beef' })
-        else if (k === '4') this.onAct?.({ act: 'eat', arg: 'cake' })
-      }
-      return
-    }
-    // mode switch
-    if (k === 'f' && this.phase === 'playing') {
-      this.setMode(this.mode === 'collect' ? 'fight' : 'collect')
-    }
-    // eat hotkeys
-    if (this.phase === 'playing') {
-      if (k === '1') this.eat('steak')
-      else if (k === '2') this.eat('pork')
-      else if (k === '3') this.eat('beef')
-      else if (k === '4') this.eat('cake')
-    }
+    this.press(k)
   }
 
   private onKeyUp = (e: KeyboardEvent) => {
     const k = e.key.toLowerCase()
-    this.keys.delete(k)
-    if (this.guest) {
-      if (k === 'w' || k === 'arrowup') this.remote.u = false
-      if (k === 's' || k === 'arrowdown') this.remote.d = false
-      if (k === 'a' || k === 'arrowleft') this.remote.l = false
-      if (k === 'd' || k === 'arrowright') this.remote.r = false
-      if (k === 'e') this.remote.e = false
-      if (k === 'q') this.remote.q = false
-      if (k === 'x') this.remote.x = false
-    }
+    this.release(k)
   }
 
   // click to attack: click on PLAYER 2 to swing at them
