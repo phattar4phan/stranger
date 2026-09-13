@@ -46,9 +46,7 @@ export default function CreatePartyScreen({
         <p className="text-[10px] text-neutral-500 blink">WAITING FOR PARTNER...</p>
       )}
       <p className="text-[8px] text-neutral-600 max-w-sm text-center leading-5">
-        you are the host — your tab runs the world. multiplayer runs between
-        tabs of this browser; your partner opens this game in a second tab and
-        enters the PIN.
+        you are the host — your tab runs the world.
       </p>
       <button onClick={onBack} className="corner-btn text-sm text-neutral-400 hover:text-white px-6 py-2 w-80 text-center">
         BACK
