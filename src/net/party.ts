@@ -22,9 +22,24 @@ const ICE = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
+      // TURN relays: STUN alone fails behind strict NAT (e.g. laptop <-> iPad)
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
     ],
+    iceCandidatePoolSize: 4,
   },
   debug: 0 as const,
 }
@@ -81,6 +96,7 @@ export class Party {
         }
         this.conn = conn
         conn.on('data', (d) => this.handle(d as PartyMsg))
+        this.watchIce(conn)
         conn.on('close', () => {
           if (this.conn === conn) this.conn = null
         })
@@ -96,6 +112,7 @@ export class Party {
     const conn = this.peer.connect(peerId(this.pin, this.guestTarget))
     this.conn = conn
     conn.on('data', (d) => this.handle(d as PartyMsg))
+    this.watchIce(conn)
     conn.on('open', () => {
       this.onStatus('ok')
       this.send({ kind: 'hello' })
@@ -150,6 +167,33 @@ export class Party {
         this.openPeer()
       }
     }, 2500)
+  }
+
+  /** watch ICE: if the link dies (e.g. 'failed'), tear down and redial */
+  private watchIce(conn: DataConnection) {
+    const tick = () => {
+      if (this.dead) return
+      const pc = conn.peerConnection
+      if (pc) {
+        const st = pc.iceConnectionState
+        if (st === 'failed' || st === 'disconnected' || st === 'closed') {
+          try {
+            conn.close()
+          } catch {
+            /* */
+          }
+          if (this.conn === conn) this.conn = null
+          if (this.role === 'guest') {
+            setTimeout(() => {
+              if (!this.dead && (!this.conn || !this.conn.open)) this.dial()
+            }, 1000)
+          }
+          return // stop watching this connection
+        }
+      }
+      setTimeout(tick, 2000)
+    }
+    setTimeout(tick, 2000)
   }
 
   private handle(m: PartyMsg) {
