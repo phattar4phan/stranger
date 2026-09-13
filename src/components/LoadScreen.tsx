@@ -28,7 +28,7 @@ export default function LoadScreen({ onDone }: { onDone: () => void }) {
         />
       </div>
       <p className="text-[10px] text-neutral-500">
-        LOADING {Math.floor(pct)}%
+        กำลังโหลด {Math.floor(pct)}%
       </p>
     </div>
   )

@@ -6,7 +6,7 @@ import type { DataConnection } from 'peerjs'
 import type { Snap, RemoteInput, GuestAct } from '../game/engine'
 
 export type PartyMsg =
-  | { kind: 'hello' }
+  | { kind: 'hello'; name?: string }
   | { kind: 'peer' }
   | { kind: 'input'; input: RemoteInput }
   | { kind: 'act'; act: GuestAct }

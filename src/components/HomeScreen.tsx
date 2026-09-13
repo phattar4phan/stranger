@@ -24,23 +24,23 @@ export default function HomeScreen({
       </h1>
 
       <button onClick={onPlay} className="corner-btn text-sm text-neutral-300 hover:text-white px-6 py-2 w-80 text-center">
-        PLAY
+        เล่น
       </button>
       <button onClick={onAbout} className="corner-btn text-sm text-neutral-300 hover:text-white px-6 py-2 w-80 text-center">
-        ABOUT
+        เกี่ยวกับ
       </button>
       <button onClick={exit} className="corner-btn text-sm text-neutral-300 hover:text-white px-6 py-2 w-80 text-center">
-        EXIT
+        ออก
       </button>
 
       {exitMsg && (
         <p className="text-[10px] text-neutral-500 mt-6">
-          your browser blocked exit. close the tab to leave.
+          เบราว์เซอร์บล็อกการออก — ปิดแท็บเพื่อออก
         </p>
       )}
 
       <p className="absolute bottom-4 text-[8px] text-neutral-600">
-        EVERYONE OUT THERE IS A STRANGER. UNTIL THEY AREN'T.
+        ทุกคนที่นั่นคือคนแปลกหน้า จนถึงวันที่เค้าไม่ใช่
       </p>
     </div>
   )

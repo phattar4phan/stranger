@@ -6,11 +6,13 @@ export default function JoinPartyScreen({
   onStart,
   onBack,
 }: {
-  onStart: (pin: string) => void
+  onStart: (pin: string, name: string) => void
   onBack: () => void
 }) {
   const [digits, setDigits] = useState<string[]>(Array(6).fill(''))
+  const [stage, setStage] = useState<'pin' | 'name'>('pin')
   const [state, setState] = useState<'input' | 'waiting' | 'ok'>('input')
+  const [name, setName] = useState('')
   const partyRef = useRef<Party | null>(null)
   const retryRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pin = digits.join('')
@@ -39,12 +41,17 @@ export default function JoinPartyScreen({
       if (m.kind === 'peer') {
         if (retryRef.current) clearInterval(retryRef.current)
         setState('ok')
-        setTimeout(() => onStart(pin), 900)
+        setTimeout(() => setStage('name'), 700)
       }
     }
     // keep asking until the host answers — no timeout
     p.send({ kind: 'hello' })
     retryRef.current = setInterval(() => p.send({ kind: 'hello' }), 1000)
+  }
+
+  const confirmName = () => {
+    if (retryRef.current) clearInterval(retryRef.current)
+    setTimeout(() => onStart(pin, name.trim() || 'ผู้เล่น 2'), 400)
   }
 
   useEffect(() => {
@@ -59,42 +66,62 @@ export default function JoinPartyScreen({
     <div className="relative h-full w-full flex flex-col items-center justify-center gap-6 fadein">
       <GridBackdrop />
       <h2 className="text-lg text-neutral-200 border-b-2 border-neutral-600 pb-3 px-8">
-        JOIN PARTY
+        เข้าร่วมปาร์ตี้
       </h2>
-      <div className="flex gap-2">
-        {digits.map((d, i) => (
-          <input
-            key={i}
-            id={`pin-${i}`}
-            value={d}
-            onChange={(e) => setDigit(i, e.target.value)}
-            inputMode="numeric"
-            maxLength={2}
-            className="w-12 h-14 text-center text-2xl bg-black/60 border-2 border-neutral-600 text-neutral-100 focus:border-yellow-400 outline-none"
-          />
-        ))}
-      </div>
-      {state === 'waiting' && (
+
+      {stage === 'pin' && (
         <>
-          <p className="text-[10px] text-neutral-500 blink">CONNECTING...</p>
-          <p className="text-[8px] text-neutral-600 max-w-sm text-center leading-5">
-            both tabs must be on the same address — same browser, same URL.
-            create the party in another tab of this browser.
-          </p>
+          <div className="flex gap-2">
+            {digits.map((d, i) => (
+              <input
+                key={i}
+                id={`pin-${i}`}
+                value={d}
+                onChange={(e) => setDigit(i, e.target.value)}
+                inputMode="numeric"
+                maxLength={2}
+                className="w-12 h-14 text-center text-2xl bg-black/60 border-2 border-neutral-600 text-neutral-100 focus:border-yellow-400 outline-none"
+              />
+            ))}
+          </div>
+          {state === 'waiting' && (
+            <p className="text-[10px] text-neutral-500 blink">กำลังเชื่อมต่อ...</p>
+          )}
+          {state === 'ok' && (
+            <p className="text-[10px] text-green-400 blink">เชื่อมต่อสำเร็จ</p>
+          )}
+          <button
+            onClick={join}
+            disabled={pin.length !== 6}
+            className="corner-btn text-sm text-neutral-300 hover:text-white px-6 py-2 w-80 text-center disabled:opacity-30"
+          >
+            ต่อไป
+          </button>
         </>
       )}
-      {state === 'ok' && (
-        <p className="text-[10px] text-green-400 blink">CONNECTED — ENTERING...</p>
+
+      {stage === 'name' && (
+        <>
+          <p className="text-[9px] text-neutral-400">คุณคือ ผู้เล่น 2 — ใส่ชื่อของคุณ</p>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 12))}
+            placeholder="ใส่ชื่อ"
+            autoFocus
+            onKeyDown={(e) => e.key === 'Enter' && confirmName()}
+            className="w-56 h-10 text-center text-sm bg-black/60 border-2 border-neutral-600 text-neutral-100 focus:border-yellow-400 outline-none"
+          />
+          <button
+            onClick={confirmName}
+            className="corner-btn text-sm text-neutral-300 hover:text-white px-6 py-2 w-80 text-center"
+          >
+            เข้าเกม
+          </button>
+        </>
       )}
-      <button
-        onClick={join}
-        disabled={pin.length !== 6}
-        className="corner-btn text-sm text-neutral-300 hover:text-white px-6 py-2 w-80 text-center disabled:opacity-30"
-      >
-        JOIN
-      </button>
+
       <button onClick={onBack} className="corner-btn text-sm text-neutral-400 hover:text-white px-6 py-2 w-80 text-center">
-        BACK
+        กลับ
       </button>
     </div>
   )

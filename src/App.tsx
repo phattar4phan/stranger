@@ -12,6 +12,7 @@ type Screen = 'load' | 'home' | 'about' | 'mode' | 'create' | 'join' | 'game'
 export interface PartySession {
   pin: string
   role: 'host' | 'guest'
+  myName: string
 }
 
 export default function App() {
@@ -37,8 +38,8 @@ export default function App() {
       )}
       {screen === 'create' && (
         <CreatePartyScreen
-          onStart={(pin) => {
-            setParty({ pin, role: 'host' })
+          onStart={(pin, name) => {
+            setParty({ pin, role: 'host', myName: name })
             setScreen('game')
           }}
           onBack={() => setScreen('mode')}
@@ -46,8 +47,8 @@ export default function App() {
       )}
       {screen === 'join' && (
         <JoinPartyScreen
-          onStart={(pin) => {
-            setParty({ pin, role: 'guest' })
+          onStart={(pin, name) => {
+            setParty({ pin, role: 'guest', myName: name })
             setScreen('game')
           }}
           onBack={() => setScreen('mode')}

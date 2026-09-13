@@ -85,6 +85,9 @@ export interface Snap {
   maxHunger2: number
   p2Hp: number
   p2Alive: boolean
+  p1Alive: boolean
+  p1Name: string
+  p2Name: string
   nodes: { x: number; y: number; type: Gatherable; amount: number }[]
   drops: { x: number; y: number; type: Gatherable }[]
   timeLeft: number
@@ -107,7 +110,22 @@ export interface EngineOpts {
   multi?: boolean // host: P2 controlled by remote partner
   guest?: boolean // guest: world is a mirror of host snapshots
   onAct?: (act: GuestAct) => void // guest engine -> host actions
+  myName?: string
 }
+
+// Thai item names for toasts
+export const THAI: Record<Item, string> = {
+  strawberry: 'สตรอเบอร์รี่',
+  blueberry: 'บลูเบอร์รี่',
+  wood: 'ไม้',
+  stone: 'หิน',
+  mushroom: 'เห็ดพิษ',
+  steak: 'สเต็ก',
+  pork: 'หมูย่าง',
+  beef: 'เนื้อย่าง',
+  cake: 'เค้ก',
+}
+export const THAI_WEAPON = ['กำปั้น', 'ไม้เบสบอล', 'ขวาน', 'ดาบ']
 
 export type GuestAct =
   | { act: 'eat'; arg: Food }
@@ -141,6 +159,8 @@ export interface HudState {
   p2Alive: boolean
   distressActive: boolean
   toast: string
+  name: string
+  oppName: string
 }
 
 interface Node {
@@ -217,6 +237,10 @@ export class Game {
   private lastMosquitoDay = 0
   private mosquitoPulse = false
   private onAct?: (a: GuestAct) => void
+  p1Name = 'PLAYER 1'
+  p2Name = 'PLAYER 2'
+  private p1Alive = true
+  private p2GatherNode: Node | null = null
   private hungerT = 0
   private regenT = 0
   private starveT = 0
@@ -260,6 +284,10 @@ export class Game {
     this.multi = opts?.multi ?? false
     this.guest = opts?.guest ?? false
     this.onAct = opts?.onAct
+    if (opts?.myName) {
+      if (this.guest) this.p2Name = opts.myName
+      else this.p1Name = opts.myName
+    }
     canvasEl.width = W * RES
     canvasEl.height = H * RES
     this.ctx = canvasEl.getContext('2d')!
@@ -284,14 +312,14 @@ export class Game {
   sell(item: Item) {
     const price = SELL_PRICE[item] ?? 0
     if (price <= 0) {
-      this.say('NOBODY BUYS POISON', 2)
+      this.say('ไม่มีใครซื้อของพิษ', 2)
       return
     }
     if (this.p1Inv[item] <= 0) return
     this.p1Inv[item]--
     this.coins += price
     this.beep(760, 0.06)
-    this.say(`+${price} COIN${price > 1 ? 'S' : ''}`, 1.2)
+    this.say(`+${price} เหรียญ`, 1.2)
   }
 
   buy(what: 'weapon' | 'hp' | 'hunger' | Food) {
@@ -301,33 +329,33 @@ export class Game {
     else if (what === 'hunger') price = HUNGER_UP_PRICE
     else price = FOOD_PRICE[what]
     if (what === 'weapon' && this.weaponTier >= WEAPONS.length - 1) {
-      this.say('SWORD IS THE BEST OUT HERE', 2)
+      this.say('ดาบดีที่สุดแล้ว', 2)
       return
     }
     if (this.coins < price) {
-      this.say('NOT ENOUGH COINS', 1.5)
+      this.say('เหรียญไม่พอ', 1.5)
       return
     }
     this.coins -= price
     if (what === 'weapon') {
       this.weaponTier++
       this.say(
-        `${WEAPONS[this.weaponTier].name} EQUIPPED. ${WEAPONS[this.weaponTier].dmg} DMG.`,
+        `${THAI_WEAPON[this.weaponTier]} พร้อมต่อสู้ · ดาเมจ ${WEAPONS[this.weaponTier].dmg}`,
         2,
       )
     } else if (what === 'hp') {
       this.maxHp++
       this.hp++
-      this.say('MAX HP +1', 2)
+      this.say('HP สูงสุด +1', 2)
     } else if (what === 'hunger') {
       this.maxHunger++
       this.hunger++
-      this.say('MAX HUNGER +1', 2)
+      this.say('ความหิวสูงสุด +1', 2)
     } else {
       // food is eaten the moment it's bought
       this.hunger = Math.min(this.maxHunger, this.hunger + FOOD_HUNGER[what])
       this.beep(520, 0.08, 'triangle')
-      this.say(`ATE ${what.toUpperCase()} +${FOOD_HUNGER[what]} HUNGER`, 1.5)
+      this.say(`กิน ${THAI[what]} +${FOOD_HUNGER[what]} หิว`, 1.5)
     }
     this.beep(880, 0.08)
   }
@@ -337,13 +365,13 @@ export class Game {
     this.p1Inv[food]--
     this.hunger = Math.min(this.maxHunger, this.hunger + FOOD_HUNGER[food])
     this.beep(520, 0.08, 'triangle')
-    this.say(`+${FOOD_HUNGER[food]} HUNGER`, 1.2)
+    this.say(`+${FOOD_HUNGER[food]} หิว`, 1.2)
   }
 
   helpDistress() {
     if (!this.distressActive) return
     if (gatherTotal(this.p1Inv) <= 0 && this.coins === 0) {
-      this.say('YOU HAVE NOTHING TO GIVE', 2)
+      this.say('คุณไม่มีอะไรจะให้', 2)
       return
     }
     // give a strawberry if you have one, else any gatherable
@@ -361,7 +389,7 @@ export class Game {
     this.phase = 'playing'
     this.beep(660, 0.08)
     this.beep(880, 0.12)
-    this.say('PLAYER 2 IS OK NOW', 2.5)
+    this.say(`${this.p2Name} ปลอดภัยแล้ว`, 2.5)
     this.cb.onDistressEnd(true)
   }
 
@@ -378,8 +406,13 @@ export class Game {
     if (this.mode === m) return
     this.mode = m
     this.p1Gather = 0
-    this.say(m === 'fight' ? 'FIGHT MODE' : 'COLLECTOR MODE', 1.5)
+    this.say(m === 'fight' ? 'โหมดต่อสู้' : 'โหมดเก็บของ', 1.5)
     this.beep(m === 'fight' ? 300 : 600, 0.08)
+  }
+
+  /** host: learn the partner's name */
+  setP2Name(n: string) {
+    if (n) this.p2Name = n
   }
 
   // ---------- input ----------
@@ -526,7 +559,7 @@ export class Game {
   private frame = (t: number) => {
     const dt = Math.min((t - this.last) / 1000, 0.05)
     this.last = t
-    if (this.guest) this.guestTick()
+    if (this.guest) this.guestTick(dt)
     else if (this.phase === 'playing') this.update(dt)
     else if (this.phase === 'ended' && this.toastT > 0) this.toastT -= dt
     this.draw()
@@ -556,12 +589,25 @@ export class Game {
       p2Alive: self ? true : this.p2Alive,
       distressActive: this.distressActive,
       toast: this.toastT > 0 ? this.toast : '',
+      name: self ? this.p2Name : this.p1Name,
+      oppName: self ? this.p1Name : this.p2Name,
     }
   }
 
-  // guest: nothing simulates locally — world comes from host snapshots
-  private guestTick() {
-    void 0
+  // guest: predict own avatar's movement locally; snapshots correct drift
+  private guestTick(dt: number) {
+    if (this.guestPhase !== 'playing' || !this.p2Alive) return
+    const a = this.p2
+    const dx = (this.remote.r ? 1 : 0) - (this.remote.l ? 1 : 0)
+    const dy = (this.remote.d ? 1 : 0) - (this.remote.u ? 1 : 0)
+    a.moving = dx !== 0 || dy !== 0
+    if (a.moving) {
+      const l = Math.hypot(dx, dy)
+      a.x = clamp(a.x + (dx / l) * 60 * dt, 8, W - 8)
+      a.y = clamp(a.y + (dy / l) * 60 * dt, 14, H - 6)
+      if (dx !== 0) a.facing = dx > 0 ? 1 : -1
+      a.walkT += dt * 8
+    }
   }
 
   private update(dt: number) {
@@ -577,24 +623,24 @@ export class Game {
       this.rollSpawn()
     }
 
-    // hunger ticks down
-    this.hungerT += dt
-    if (this.hungerT >= HUNGER_TICK) {
+    // hunger ticks down (alive players only)
+    if (this.p1Alive) this.hungerT += dt
+    if (this.p1Alive && this.hungerT >= HUNGER_TICK) {
       this.hungerT = 0
       if (this.hunger > 0) {
         this.hunger--
-        if (this.hunger === 0) this.say('YOU ARE STARVING. EAT [1-4].', 2.5)
+        if (this.hunger === 0) this.say('หิวแล้ว! กินอาหาร [1-4]', 2.5)
       }
     }
     // hunger regenerates health
-    if (this.hunger > 0 && this.hp < this.maxHp) {
+    if (this.p1Alive && this.hunger > 0 && this.hp < this.maxHp) {
       this.regenT += dt
       if (this.regenT >= REGEN_TIME) {
         this.regenT = 0
         this.hp++
         this.beep(600, 0.05, 'triangle')
       }
-    } else if (this.hunger === 0) {
+    } else if (this.p1Alive && this.hunger === 0) {
       this.regenT = 0
       this.starveT += dt
       if (this.starveT >= STARVE_TIME) {
@@ -603,7 +649,7 @@ export class Game {
         this.flash = 0.3
         this.flashColor = '200,0,0'
         this.beep(100, 0.2, 'sawtooth', 0.06)
-        this.say('STARVING. HP DROPPING.', 2)
+        this.say('หิวจนตาย HP กำลังลด', 2)
         if (this.hp <= 0) {
           this.p1Death('starved')
           return
@@ -619,7 +665,7 @@ export class Game {
       const dayLeft = DAY_LENGTH - (this.elapsed % DAY_LENGTH)
       if (day >= 2 && dayLeft <= 30 && this.lastMosquitoDay < day) {
         this.lastMosquitoDay = day
-        this.say('MOSQUITOES ARE COMING...', 3)
+        this.say('ยุงกำลังมา...', 3)
         this.beep(300, 0.25, 'triangle', 0.05)
         this.beep(260, 0.3, 'triangle', 0.04)
       }
@@ -627,18 +673,20 @@ export class Game {
       this.mosquitoPulse = day >= 2 && dayLeft <= 30 && !this.timeUpFired
     }
 
-    // the swarm bites: both players lose 1 hp every 5s while it lasts
+    // the swarm bites: alive players lose 1 hp every 5s while it lasts
     if (this.mosquitoPulse) {
       this.mosqT += dt
       if (this.mosqT >= MOSQUITO_HIT) {
         this.mosqT = 0
-        this.hp = Math.max(0, this.hp - 1)
-        this.flash = 0.25
-        this.flashColor = '200,0,0'
-        this.beep(90, 0.15, 'sawtooth', 0.05)
-        if (this.hp <= 0) {
-          this.p1Death('mosquito')
-          return
+        if (this.p1Alive) {
+          this.hp = Math.max(0, this.hp - 1)
+          this.flash = 0.25
+          this.flashColor = '200,0,0'
+          this.beep(90, 0.15, 'sawtooth', 0.05)
+          if (this.hp <= 0) {
+            this.p1Death('mosquito')
+            return
+          }
         }
         if (this.multi && this.p2Alive) {
           this.hp2 = Math.max(0, this.hp2 - 1)
@@ -707,6 +755,7 @@ export class Game {
   // ---------- P1 ----------
 
   private updateP1(dt: number) {
+    if (!this.p1Alive) return // dead men gather no berries
     const p = this.p1
     let dx = 0
     let dy = 0
@@ -739,14 +788,14 @@ export class Game {
             this.flash = 0.6
             this.flashColor = '150,0,200'
             this.beep(80, 0.5, 'sawtooth', 0.08)
-            this.say('POISON! HP CRASHED TO 1', 3)
+            this.say('พิษ! HP เหลือ 1', 3)
           }
           if (n.amount <= 0) {
             this.nodes = this.nodes.filter((m) => m !== n)
             this.p1GatherNode = null
             // 1:1 respawn: a new random resource (rarity-weighted) appears elsewhere
             this.rollSpawn()
-            this.say('+1 ' + n.type.toUpperCase(), 1)
+            this.say('+1 ' + THAI[n.type], 1)
           }
         }
       } else {
@@ -774,10 +823,10 @@ export class Game {
           this.flash = 0.25
           this.flashColor = '255,0,0'
           this.beep(180, 0.15, 'sawtooth', 0.05)
-          this.say('STOLE 1 ' + r.toUpperCase(), 1.5)
+          this.say(`ขโมย 1 ${THAI[r]} มา!`, 1.5)
         } else {
           this.p1StealCd = 2
-          this.say('PLAYER 2 HAS NOTHING', 1.5)
+          this.say('เค้าไม่มีอะไรจะขโมย', 1.5)
         }
       }
     }
@@ -800,10 +849,10 @@ export class Game {
           this.p2Inv[give]++
           this.giveCd = 1
           this.beep(700, 0.08, 'triangle')
-          this.say(`GAVE 1 ${give.toUpperCase()} TO PLAYER 2`, 1.5)
+          this.say(`ให้ ${this.p2Name} 1 ${THAI[give]}`, 1.5)
         } else {
           this.giveCd = 1
-          this.say('NOTHING TO GIVE', 1.2)
+          this.say('ไม่มีอะไรจะให้', 1.2)
         }
       }
     }
@@ -831,7 +880,7 @@ export class Game {
     this.flash = 0.3
     this.flashColor = '255,0,0'
     if (this.p2Hp <= 0) this.killP2('attacked')
-    else this.say('PLAYER 2 IS HURT', 1.2)
+    else this.say(`${this.p2Name} บาดเจ็บ`, 1.2)
   }
 
   private nearestNode(x: number, y: number): Node | null {
@@ -854,7 +903,7 @@ export class Game {
       this.hunger2T = 0
       if (this.hunger2 > 0) {
         this.hunger2--
-        if (this.hunger2 === 0) this.say('PLAYER 2 IS STARVING', 2.5)
+        if (this.hunger2 === 0) this.say(`${this.p2Name} กำลังหิว`, 2.5)
       }
     }
     if (this.hunger2 > 0 && this.hp2 < this.maxHp2) {
@@ -893,6 +942,8 @@ export class Game {
     } else if (ri.e) {
       const n = this.nearestNode(a.x, a.y)
       if (n) {
+        if (this.p2GatherNode !== n) this.p2Gather = 0
+        this.p2GatherNode = n
         this.p2Gather += dt / 0.9
         if (this.p2Gather >= 1) {
           this.p2Gather = 0
@@ -901,14 +952,17 @@ export class Game {
           if (n.type === 'mushroom') this.hp2 = 1
           if (n.amount <= 0) {
             this.nodes = this.nodes.filter((m) => m !== n)
+            this.p2GatherNode = null
             this.rollSpawn()
           }
         }
       } else {
         this.p2Gather = 0
+        this.p2GatherNode = null
       }
     } else {
       this.p2Gather = 0
+      this.p2GatherNode = null
     }
 
     if (this.p2StealCd > 0) this.p2StealCd -= dt
@@ -928,7 +982,7 @@ export class Game {
           this.p2StealCd = 5
           this.flash = 0.25
           this.flashColor = '255,0,0'
-          this.say('PLAYER 2 STOLE FROM YOU!', 1.5)
+          this.say(`${this.p2Name} ขโมยของคุณ!`, 1.5)
         }
       }
     }
@@ -944,7 +998,7 @@ export class Game {
         const ang = Math.atan2(this.p1.y - a.y, this.p1.x - a.x)
         this.p1.x = clamp(this.p1.x + Math.cos(ang) * 20, 8, W - 8)
         this.p1.y = clamp(this.p1.y + Math.sin(ang) * 20, 14, H - 6)
-        this.say('PLAYER 2 HIT YOU!', 1.2)
+        this.say(`${this.p2Name} ตบคุณ!`, 1.2)
         if (this.hp <= 0) this.p1Death('killed')
       }
     }
@@ -981,7 +1035,7 @@ export class Game {
           this.flash = 0.3
           this.flashColor = '255,0,0'
           this.beep(150, 0.2, 'sawtooth', 0.06)
-          this.say('PLAYER 2 STOLE FROM YOU!', 2)
+          this.say(`${this.p2Name} ขโมยของคุณ!`, 2)
         }
       }
     } else {
@@ -1044,8 +1098,9 @@ export class Game {
   }
 
   private p1Death(reason: 'mosquito' | 'starved' | 'killed') {
-    if (this.timeUpFired) return
-    this.phase = 'ended'
+    if (!this.p1Alive || this.timeUpFired) return
+    this.p1Alive = false
+    // world keeps running — the other player must survive to day 7
     this.seq.p1death++
     this.beep(70, 1, 'sawtooth', 0.09)
     this.cb.onP1Death(reason)
@@ -1067,6 +1122,9 @@ export class Game {
       maxHunger2: this.maxHunger2,
       p2Hp: this.p2Hp,
       p2Alive: this.p2Alive,
+      p1Alive: this.p1Alive,
+      p1Name: this.p1Name,
+      p2Name: this.p2Name,
       nodes: this.nodes.map((n) => ({ ...n })),
       drops: this.drops.map((d) => ({ ...d })),
       timeLeft: Math.max(0, GAME_DURATION - this.elapsed),
@@ -1075,7 +1133,7 @@ export class Game {
       p1Gather: this.p1Gather,
       p1GatherNode: this.p1GatherNode ? this.nodes.indexOf(this.p1GatherNode) : -1,
       p2Gather: this.p2Gather,
-      p2GatherNode: -1,
+      p2GatherNode: this.p2GatherNode ? this.nodes.indexOf(this.p2GatherNode) : -1,
       attackAnim: this.attackAnim,
       p1Attacking: this.attackAnim > 0,
       phase: this.phase,
@@ -1107,6 +1165,9 @@ export class Game {
     this.maxHunger2 = s.maxHunger2
     this.p2Hp = s.p2Hp
     this.p2Alive = s.p2Alive
+    this.p1Alive = s.p1Alive
+    if (s.p1Name) this.p1Name = s.p1Name
+    if (s.p2Name) this.p2Name = s.p2Name
     this.nodes = s.nodes.map((n) => ({ ...n }))
     this.drops = s.drops.map((d) => ({ ...d }))
     this.elapsed = GAME_DURATION - s.timeLeft
@@ -1114,6 +1175,8 @@ export class Game {
     this.mosquitoPulse = s.mosquito
     this.p1Gather = s.p1Gather
     this.p1GatherNode = s.p1GatherNode >= 0 ? this.nodes[s.p1GatherNode] : null
+    this.p2Gather = s.p2Gather
+    this.p2GatherNode = s.p2GatherNode >= 0 ? this.nodes[s.p2GatherNode] : null
     this.attackAnim = s.attackAnim
     this.toast = s.toast
     this.toastT = s.toast ? 0.4 : 0
@@ -1147,7 +1210,7 @@ export class Game {
   devSkipToLastDay() {
     this.elapsed = GAME_DURATION - DAY_LENGTH
     this.lastMosquitoDay = TOTAL_DAYS - 1
-    this.say('DEV: DAY 7', 2)
+    this.say('DEV: วันที่ 7', 2)
   }
 
   devKillP2(by: 'mosquito' | 'player') {
@@ -1173,7 +1236,7 @@ export class Game {
       if (give) {
         this.p2Inv[give]--
         this.p1Inv[give]++
-        this.say('PLAYER 2 GAVE YOU 1 ' + give.toUpperCase(), 1.5)
+        this.say(`${this.p2Name} ให้คุณ 1 ${THAI[give]}`, 1.5)
       }
       return
     }
@@ -1181,7 +1244,7 @@ export class Game {
       if (this.p2Inv[a.arg] > 0) {
         this.p2Inv[a.arg]--
         this.hunger2 = Math.min(this.maxHunger2, this.hunger2 + FOOD_HUNGER[a.arg])
-        this.say('PLAYER 2 ATE ' + a.arg.toUpperCase(), 1.2)
+        this.say(`${this.p2Name} กิน ${THAI[a.arg]}`, 1.2)
       }
       return
     }
@@ -1190,7 +1253,7 @@ export class Game {
       if (price <= 0 || this.p2Inv[a.arg] <= 0) return
       this.p2Inv[a.arg]--
       this.p2Coins += price
-      this.say('PLAYER 2 SOLD ' + a.arg.toUpperCase(), 1.2)
+      this.say(`${this.p2Name} ขาย ${THAI[a.arg]}`, 1.2)
       return
     }
     // buy
@@ -1247,8 +1310,8 @@ export class Game {
 
     // nodes
     for (const n of this.nodes) {
-      // highlight the node being gathered
-      if (n === this.p1GatherNode && this.p1Gather > 0) {
+      // highlight the node being gathered (by either player)
+      if ((n === this.p1GatherNode && this.p1Gather > 0) || (n === this.p2GatherNode && this.p2Gather > 0)) {
         c.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 160)
         c.strokeStyle = '#ffffff'
         c.lineWidth = 1
@@ -1283,17 +1346,25 @@ export class Game {
       c.fillStyle = '#f1c40f'
       c.fillRect(n.x - 7, n.y - 13, Math.floor(14 * this.p1Gather), 1)
     }
+    if (this.p2Gather > 0 && this.p2GatherNode) {
+      const n = this.p2GatherNode
+      c.fillStyle = '#000'
+      c.fillRect(n.x - 8, n.y - 14, 16, 3)
+      c.fillStyle = '#ff8c66'
+      c.fillRect(n.x - 7, n.y - 13, Math.floor(14 * this.p2Gather), 1)
+    }
 
     // characters
     if (this.p2Alive) this.drawPerson(this.p2.x, this.p2.y, '#c0392b', this.p2, false)
-    else this.drawBody(this.p2.x, this.p2.y)
-    const sitting = (this.guest ? this.guestPhase : this.phase) === 'ended'
-    this.drawPerson(this.p1.x, this.p1.y, '#1f6f8b', this.p1, sitting)
+    else this.drawBody(this.p2.x, this.p2.y, '#c0392b')
+    const sitting = (this.guest ? this.guestPhase : this.phase) === 'ended' && this.p1Alive
+    if (this.p1Alive) this.drawPerson(this.p1.x, this.p1.y, '#1f6f8b', this.p1, sitting)
+    else this.drawBody(this.p1.x, this.p1.y, '#1f6f8b')
 
     // nameplates
-    this.plate('PLAYER 1', this.p1.x, this.p1.y - 22, '#7fdfff')
+    this.plate(this.p1Name, this.p1.x, this.p1.y - 22, '#7fdfff')
     if (this.p2Alive) {
-      this.plate('PLAYER 2', this.p2.x, this.p2.y - 22, '#ffb0a0')
+      this.plate(this.p2Name, this.p2.x, this.p2.y - 22, '#ffb0a0')
     } else {
       this.plate('R.I.P', this.p2.x, this.p2.y - 18, '#888')
     }
@@ -1463,9 +1534,9 @@ export class Game {
     c.fillRect(x + (p.facing > 0 ? 1 : -2), y - 12, 1, 1)
   }
 
-  private drawBody(x: number, y: number) {
+  private drawBody(x: number, y: number, shirt = '#c0392b') {
     const c = this.ctx
-    c.fillStyle = '#c0392b'
+    c.fillStyle = shirt
     c.fillRect(x - 6, y - 3, 12, 4)
     c.fillStyle = '#e0a878'
     c.fillRect(x + 6, y - 3, 5, 4)
