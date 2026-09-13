@@ -5,12 +5,16 @@ import GridBackdrop from './GridBackdrop'
 export default function CreatePartyScreen({
   onStart,
   onBack,
+  initialPin,
+  initialName,
 }: {
   onStart: (pin: string, name: string) => void
   onBack: () => void
+  initialPin?: string
+  initialName?: string
 }) {
-  const [pin] = useState(makePin)
-  const [name, setName] = useState('')
+  const [pin] = useState(initialPin ?? makePin())
+  const [name, setName] = useState(initialName ?? '')
   const [connected, setConnected] = useState(false)
   const partyRef = useRef<Party | null>(null)
   const nameRef = useRef('')
@@ -42,6 +46,9 @@ export default function CreatePartyScreen({
       <div className="text-4xl text-yellow-300 tracking-[0.3em] bg-black/60 border-2 border-yellow-700 px-8 py-4">
         {pin}
       </div>
+      <p className="text-[8px] text-neutral-600 max-w-md text-center leading-5">
+        ส่งลิงก์นี้ให้เพื่อน: <span className="text-neutral-400">{window.location.origin}/pin={pin}?player=2</span>
+      </p>
       <label className="text-[9px] text-neutral-400 flex flex-col items-center gap-2">
         ชื่อของคุณ (ผู้เล่น 1)
         <input

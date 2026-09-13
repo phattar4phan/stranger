@@ -5,14 +5,20 @@ import GridBackdrop from './GridBackdrop'
 export default function JoinPartyScreen({
   onStart,
   onBack,
+  initialPin,
+  initialName,
 }: {
   onStart: (pin: string, name: string) => void
   onBack: () => void
+  initialPin?: string
+  initialName?: string
 }) {
-  const [digits, setDigits] = useState<string[]>(Array(6).fill(''))
+  const [digits, setDigits] = useState<string[]>(
+    initialPin ? initialPin.split('') : Array(6).fill(''),
+  )
   const [stage, setStage] = useState<'pin' | 'name'>('pin')
   const [state, setState] = useState<'input' | 'waiting' | 'ok'>('input')
-  const [name, setName] = useState('')
+  const [name, setName] = useState(initialName ?? '')
   const partyRef = useRef<Party | null>(null)
   const retryRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pin = digits.join('')
