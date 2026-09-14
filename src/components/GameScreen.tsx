@@ -243,7 +243,7 @@ export default function GameScreen({
           const firstDeadIsP2 = isGuest ? s.firstDead === 'p1' : s.firstDead === 'p2'
           if (!firstDeadIsP2) return // the already-dead side keeps its exit screen
           const opp = isGuest ? s.p1Name : s.p2Name
-          setEnding(survDiedLines(s.firstCause, opp))
+          setEnding(survDiedLines(s.firstCause || firstCauseRef.current, opp))
         },
         onTimeUp: () => {
           const g2 = gameRef.current
@@ -254,7 +254,8 @@ export default function GameScreen({
           if (bothAlive) {
             setEnding(bothLines(opp))
           } else {
-            setEnding(survEndLines(firstCauseRef.current, opp))
+            // read the cause from the synced world, not local memory
+            setEnding(survEndLines(s.firstCause || firstCauseRef.current, opp))
           }
         },
       },

@@ -81,6 +81,8 @@ export interface Snap {
   p1Inv: Inventory
   p2Inv: Inventory
   p2Coins: number
+  hp: number
+  maxHp: number
   hp2: number
   maxHp2: number
   hunger2: number
@@ -1218,6 +1220,8 @@ export class Game {
       p1Inv: { ...this.p1Inv },
       p2Inv: { ...this.p2Inv },
       p2Coins: this.p2Coins,
+      hp: this.hp,
+      maxHp: this.maxHp,
       hp2: this.hp2,
       maxHp2: this.maxHp2,
       hunger2: this.hunger2,
@@ -1265,6 +1269,8 @@ export class Game {
     this.p1Inv = { ...s.p1Inv }
     this.p2Inv = { ...s.p2Inv }
     this.p2Coins = s.p2Coins
+    this.hp = s.hp
+    this.maxHp = s.maxHp
     this.hp2 = s.hp2
     this.maxHp2 = s.maxHp2
     this.hunger2 = s.hunger2
@@ -1521,13 +1527,7 @@ export class Game {
       c.fillRect(this.p2.x, this.p2.y - 28 + bob, 1, 2)
     }
 
-    // hp pips over P2 when hurt
-    if (this.p2Alive && this.p2Hp < 5) {
-      for (let i = 0; i < 5; i++) {
-        c.fillStyle = i < this.p2Hp ? '#e74c3c' : '#400000'
-        c.fillRect(this.p2.x - 11 + i * 5, this.p2.y - 16, 4, 2)
-      }
-    }
+    // (battle progress shows via floating hp only — no second bar)
 
     // weapon in hand (animated)
     this.drawWeapon()

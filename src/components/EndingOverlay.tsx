@@ -37,10 +37,10 @@ export default function CreditsOverlay({
         key={step}
         className={
           lines[step].tone === 'neutral'
-            ? 'text-lg text-neutral-100 leading-9 fadein'
+            ? 'text-[28px] text-neutral-100 leading-12 credit-in'
             : lines[step].tone === 'light'
-              ? 'text-[13px] text-green-300 leading-8 max-w-lg fadein'
-              : 'text-[13px] text-neutral-400 leading-8 max-w-lg fadein'
+              ? 'text-[20px] text-green-300 leading-10 max-w-2xl credit-in'
+              : 'text-[20px] text-neutral-400 leading-10 max-w-2xl credit-in'
         }
       >
         {lines[step].text}

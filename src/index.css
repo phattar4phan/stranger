@@ -103,6 +103,15 @@ canvas {
   animation: fadein 1.2s ease both;
 }
 
+/* credits lines: fade 1.45s (0.25s slower) */
+@keyframes creditin {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.credit-in {
+  animation: creditin 1.45s ease both;
+}
+
 @keyframes slowfadein {
   from { opacity: 0; }
   to { opacity: 1; }

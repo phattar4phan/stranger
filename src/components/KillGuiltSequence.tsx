@@ -48,14 +48,14 @@ export default function KillGuiltSequence({
       }}
     >
       {step !== 2 && step !== 3 && (
-        <p key={step} className="text-lg text-red-400 fadein leading-10">
+        <p key={step} className="text-[26px] text-red-400 credit-in leading-12">
           {line[step]}
         </p>
       )}
 
       {step === 2 && (
         <>
-          <p className="text-[12px] text-neutral-300 fadein leading-8 max-w-lg mb-6">
+          <p className="text-[18px] text-neutral-300 credit-in leading-9 max-w-2xl mb-6">
             {line[2]}
           </p>
           <div className="grid grid-cols-2 gap-3 fadein">
@@ -77,7 +77,7 @@ export default function KillGuiltSequence({
       )}
 
       {step === 3 && pick && (
-        <p key={pick} className="text-[12px] text-neutral-200 fadein leading-8 max-w-md">
+        <p key={pick} className="text-[18px] text-neutral-200 credit-in leading-9 max-w-xl">
           {pick === truth ? (
             <>
               คุณเลือก {pick}
