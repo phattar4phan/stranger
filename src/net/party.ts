@@ -94,6 +94,7 @@ export class Party {
   constructor(
     readonly pin: string,
     readonly role: 'host' | 'guest',
+    readonly helloName?: string,
   ) {
     // lane 1: same-browser tabs
     try {
@@ -147,7 +148,7 @@ export class Party {
     conn.on('open', () => {
       this.onStatus('ok')
       this.failCount = 0
-      this.send({ kind: 'hello' })
+      this.send({ kind: 'hello', name: this.helloName })
       // heartbeat hello: if the lane dies, reconnect
       if (this.helloTimer) clearInterval(this.helloTimer)
       this.helloTimer = setInterval(() => {

@@ -29,23 +29,22 @@ export default function CreditsOverlay({
 
   return (
     <div
-      className="absolute inset-0 z-40 bg-black/95 flex flex-col items-center justify-center text-center px-6 gap-4 cursor-pointer"
+      className="absolute inset-0 z-40 bg-black/95 flex flex-col items-center justify-center text-center px-6 cursor-pointer"
       onClick={() => !last && setStep((s) => s + 1)}
     >
-      {lines.slice(0, step + 1).map((l, i) => (
-        <p
-          key={i}
-          className={
-            l.tone === 'neutral'
-              ? 'text-lg text-neutral-100 leading-9 fadein'
-              : l.tone === 'light'
-                ? 'text-[13px] text-green-300 leading-8 max-w-lg fadein'
-                : 'text-[13px] text-neutral-400 leading-8 max-w-lg fadein'
-          }
-        >
-          {l.text}
-        </p>
-      ))}
+      {/* one line at a time: appear, disappear, next */}
+      <p
+        key={step}
+        className={
+          lines[step].tone === 'neutral'
+            ? 'text-lg text-neutral-100 leading-9 fadein'
+            : lines[step].tone === 'light'
+              ? 'text-[13px] text-green-300 leading-8 max-w-lg fadein'
+              : 'text-[13px] text-neutral-400 leading-8 max-w-lg fadein'
+        }
+      >
+        {lines[step].text}
+      </p>
 
       {last && onContinue && (
         <button

@@ -264,17 +264,13 @@ export default function GameScreen({
 
     // multiplayer wiring
     if (party) {
-      const p = new Party(party.pin, party.role)
+      const p = new Party(party.pin, party.role, myName)
       partyRef.current = p
       p.onMsg = (m: PartyMsg) => {
         if (isHost && m.kind === 'input') g.setRemoteInput(m.input)
         if (isHost && m.kind === 'act') g.guestAct(m.act)
-        if (isHost && m.kind === 'hello') g.setP2Name(m.name ?? 'ผู้เล่น 2')
+        if (isHost && m.kind === 'hello' && m.name) g.setP2Name(m.name)
         if (isGuest && m.kind === 'snap') g.applySnap(m.snap)
-      }
-      if (isGuest) {
-        // tell the host who we are once the game channel is alive
-        setTimeout(() => p.send({ kind: 'hello', name: myName }), 300)
       }
       if (isHost) {
         cleanupRef.current = setInterval(
