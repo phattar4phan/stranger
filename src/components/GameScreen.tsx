@@ -16,8 +16,9 @@ import {
   type Food,
 } from '../game/engine'
 import DeathSequence from './DeathSequence'
-import EndingOverlay from './EndingOverlay'
-import type { Inventory } from '../game/engine'
+import CreditsOverlay, { type CreditLine } from './EndingOverlay'
+import KillGuiltSequence from './KillGuiltSequence'
+import type { DeathCause } from '../game/engine'
 import { Party, type PartyMsg } from '../net/party'
 import type { PartySession } from '../App'
 
@@ -36,18 +37,6 @@ const pips = (v: number, max: number, icon: string) => (
     ))}
   </span>
 )
-
-type Ending = {
-  kind: 'win' | 'lose'
-  p1: Inventory
-  p2: Inventory
-  helped: boolean
-  p2Dead: boolean
-  p1Dead: boolean
-  p1Name: string
-  p2Name: string
-  role: 'host' | 'guest'
-}
 
 type PanelState = 'closed' | 'open' | 'closing'
 type DeathReason = 'neglect' | 'attacked' | 'mosquito' | 'starved' | 'killed'
@@ -111,6 +100,82 @@ const hud0: HudState & { name: string; oppName: string } = {
   oppName: '',
 }
 
+const L = (text: string, tone: CreditLine['tone'] = 'dark'): CreditLine => ({ text, tone })
+
+// ---- scenario credit lines ----
+
+// the player who was killed, on their own screen
+const victimLines = (cause: DeathCause, day: number): CreditLine[] => {
+  if (cause === 'player')
+    return [
+      L('ไม่เป็นไร...'),
+      L('เขาแค่ไม่เห็นใจคุณ'),
+      L('เขาแค่อยากชนะคนเดียว'),
+      L('เริ่มเล่นใหม่ได้นะ'),
+      L('แค่พวกคุณเห็นใจกัน เอาใจช่วยกัน ก็สามารถชนะเกมนี้ได้'),
+    ]
+  const first =
+    cause === 'mosquito' ? 'คุณถูกยุงฆ่าตาย' : cause === 'starved' ? 'คุณหิวจนตาย' : 'คุณถูกทิ้งไว้จนตาย'
+  return [
+    L(first),
+    L(`ในวันที่ ${day}`),
+    L('ไม่เป็นไร... ถ้าผู้เล่นอีกคนช่วยคุณได้ก็น่าจะดี'),
+    L('แต่อาจจะไม่ใช่เพราะเขาก็ได้'),
+    L('เอาใจช่วยกันดีๆ จะได้สามารถชนะเกมนี้ได้...'),
+  ]
+}
+
+// the player who lived on, right after the other died
+const noticeLines = (deadName: string): CreditLine[] => [
+  L(`ผู้เล่น ${deadName} ตายแล้ว`),
+  L('คุณไม่ช่วยเขาหล่ะ'),
+  L('หรือว่าคุณอาจจะช่วยไม่ทัน หรือ ไม่ได้สังเกต'),
+  L('ไม่เป็นไร...'),
+  L('เอาใหม่นะ อยู่ให้รอดจนกว่าเกมจะจบ'),
+]
+
+// survivor reached day 7
+const survEndLines = (cause: DeathCause | '', deadName: string): CreditLine[] =>
+  cause === 'player'
+    ? [
+        L('ยินดีด้วย คุณอยู่รอดจนจบเกม'),
+        L(`แล้วคุณแบ่งชัยชนะให้ ${deadName} ได้ไหม`),
+        L('ถ้าเขาชนะไปพร้อมกับคุณก็น่าจะดีนะ'),
+        L('มีความเห็นอกเห็นใจกันบ้าง'),
+      ]
+    : [
+        L('เก่งมากที่สามารถอยู่รอดได้'),
+        L(`${deadName} น่าจะดีใจนะ แต่เค้าไม่อยู่ด้วยแล้ว`),
+        L('รอบหน้าให้ช่วยกันเล่น...'),
+      ]
+
+// survivor died before the end
+const survDiedLines = (cause: DeathCause | '', deadName: string): CreditLine[] =>
+  cause === 'player'
+    ? [
+        L('สุดท้าย... คุณก็อยู่ไม่รอด'),
+        L('ถ้ามีเขาคุณอาจจะอยู่รอดจนจบและชนะไปพร้อมกันก็ได้นะ'),
+        L('ถ้าคุณไม่คิดจะฆ่าเค้าเพื่อเอาแค่ทรัพยากร...ก็น่าจะชนะไปด้วยกันได้'),
+        L('แต่สุดท้ายไม่มีเขาคุณก็แพ้'),
+        L('แค่เห็นใจเค้าคุณก็พากันชนะได้'),
+      ]
+    : [
+        L('สุดท้ายคุณก็อยู่ไม่รอด'),
+        L(`ถ้ามี ${deadName} อยู่เล่นต่อด้วยก็น่าจะดี`),
+        L('เล่นอีกทีรอบหน้าคอยเอาใจช่วยกันนะ'),
+        L('แค่นี้ก็เก่งมากๆแล้ว'),
+      ]
+
+// both alive at day 7
+const bothLines = (otherName: string): CreditLine[] => [
+  L('เก่งมากๆ...'),
+  L(`คุณและ ${otherName} สามารถอยู่รอดได้ถึง 7 วัน`),
+  L('รู้มั้ยเพราะอะไร ทำไมถึงอยู่ได้นานขนาดนี้...'),
+  L('เพราะคุณคอยช่วยเหลือกัน เห็นใจกันและกันยังไงหล่ะ'),
+  L('ถึงสามารถช่วยเหลือกันและอยู่รอดจนจบเกมได้'),
+  L('สุดยอด...'),
+]
+
 export default function GameScreen({
   party,
   onExit,
@@ -130,6 +195,7 @@ export default function GameScreen({
   const hudRef = useRef(hud)
   hudRef.current = hud
   const [deathReason, setDeathReason] = useState<DeathReason | null>(null)
+  const [deathDay, setDeathDay] = useState(1)
   const [deathDone, setDeathDone] = useState(false)
   const [p1DeathReason, setP1DeathReason] = useState<DeathReason | null>(null)
   const [p1Died, setP1Died] = useState(false)
@@ -138,8 +204,16 @@ export default function GameScreen({
   const [sellState, setSellState] = useState<PanelState>('closed')
   const [shopState, setShopState] = useState<PanelState>('closed')
   const [fx, setFx] = useState<{ panel: 'sell' | 'shop'; n: number } | null>(null)
-  const [ending, setEnding] = useState<Ending | null>(null)
+  const [ending, setEnding] = useState<CreditLine[] | null>(null)
+  const firstCauseRef = useRef<DeathCause | ''>('')
   const cleanupRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // note the first death's cause — decides which end credits play later
+  const noteFirstCause = (r: DeathReason) => {
+    if (firstCauseRef.current) return
+    firstCauseRef.current =
+      r === 'attacked' ? 'player' : r === 'killed' ? 'player' : (r as DeathCause)
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -150,44 +224,38 @@ export default function GameScreen({
         onHud: setHud,
         onDistress: () => setHud((h) => ({ ...h, distressActive: true })),
         onDistressEnd: () => setHud((h) => ({ ...h, distressActive: false })),
-        onDeath: (reason) => setDeathReason(reason),
+        onDeath: (reason) => {
+          setDeathReason(reason)
+          setDeathDay(hudRef.current.day)
+          noteFirstCause(reason)
+        },
         onP1Death: (reason) => {
           setP1DeathReason(reason)
           setP1Died(true)
+          setDeathDay(hudRef.current.day)
+          noteFirstCause(reason)
+        },
+        onGameOver: () => {
+          // second death: show the survivor-died credits on their screen
+          const g2 = gameRef.current
+          if (!g2) return
+          const s = g2.getSnap()
+          const firstDeadIsP2 = isGuest ? s.firstDead === 'p1' : s.firstDead === 'p2'
+          if (!firstDeadIsP2) return // the already-dead side keeps its exit screen
+          const opp = isGuest ? s.p1Name : s.p2Name
+          setEnding(survDiedLines(s.firstCause, opp))
         },
         onTimeUp: () => {
           const g2 = gameRef.current
           if (!g2) return
-          let e: Ending
-          if (isGuest) {
-            // guest: world is the host's snapshot
-            const s = g2.getSnap()
-            e = {
-              kind: s.winnerP1 ? 'win' : 'lose',
-              p1: s.p1Inv,
-              p2: s.p2Inv,
-              helped: s.helped,
-              p2Dead: !s.p2Alive,
-              p1Dead: !s.p1Alive,
-              p1Name: s.p1Name,
-              p2Name: s.p2Name,
-              role: 'guest',
-            }
+          const s = g2.getSnap()
+          const opp = isGuest ? s.p1Name : s.p2Name
+          const bothAlive = s.p1Alive && s.p2Alive
+          if (bothAlive) {
+            setEnding(bothLines(opp))
           } else {
-            const stats = g2.getStats()
-            e = {
-              kind: g2.p1Won() ? 'win' : 'lose',
-              p1: stats.p1,
-              p2: stats.p2,
-              helped: g2.wasHelped(),
-              p2Dead: !hudRef.current.p2Alive,
-              p1Dead: false,
-              p1Name: g2.p1Name,
-              p2Name: g2.p2Name,
-              role: 'host',
-            }
+            setEnding(survEndLines(firstCauseRef.current, opp))
           }
-          setEnding(e)
         },
       },
       { multi: isHost, guest: isGuest, myName },
@@ -254,6 +322,12 @@ export default function GameScreen({
   const selfName = isGuest ? `คุณ (${myName})` : `คุณ (${hud.name || myName})`
   const oppName = hud.oppName || (isGuest ? 'ผู้เล่น 1' : 'ผู้เล่น 2')
   const anyOverlay = deathReason !== null || p1Died || ending !== null
+
+  const resumeAfterDeath = () => {
+    setDeathReason(null)
+    setDeathDone(true)
+    gameRef.current?.resumeAfterDeath()
+  }
   // touch device? show on-screen controls
   const [isTouch] = useState(
     () =>
@@ -569,41 +643,31 @@ export default function GameScreen({
           </div>
         )}
 
-        {/* P2 killed by P1 — host gets the guilt credits */}
-        {deathReason === 'attacked' && isHost && (
-          <GuiltOverlay
-            onContinue={() => {
-              setDeathReason(null)
-              setDeathDone(true)
-              gameRef.current?.resumeAfterDeath()
-            }}
+        {/* P2 died — killer's guilt sequence on the killer's screen */}
+        {deathReason !== null && !ending && isHost && deathReason === 'attacked' && (
+          <KillGuiltSequence
+            victimName={oppName}
+            onContinue={resumeAfterDeath}
           />
         )}
 
-        {/* P2 killed by P1 — guest sees their own end */}
-        {deathReason === 'attacked' && isGuest && (
-          <P2KilledScreen p1Name={oppName} onExit={onExit} />
-        )}
-
-        {/* P2 died other ways — reveal sequence */}
-        {deathReason !== null && deathReason !== 'attacked' && isHost && (
-          <DeathSequence
-            p2Name={oppName}
-            onContinue={() => {
-              setDeathReason(null)
-              setDeathDone(true)
-              gameRef.current?.resumeAfterDeath()
-            }}
+        {/* P2 died — survivor notice on host (mosquito/starve), reveal for neglect */}
+        {deathReason !== null && !ending && isHost && deathReason !== 'attacked' && deathReason !== 'neglect' && (
+          <CreditsOverlay
+            lines={noticeLines(oppName)}
+            onContinue={resumeAfterDeath}
+            continueText="อยู่ให้รอด &gt;"
           />
         )}
-        {deathReason !== null && deathReason !== 'attacked' && isGuest && (
-          <DeathSequence
-            p2Name={myName}
-            onContinue={() => {
-              setDeathReason(null)
-              setDeathDone(true)
-              gameRef.current?.resumeAfterDeath()
-            }}
+        {deathReason !== null && !ending && isHost && deathReason === 'neglect' && (
+          <DeathSequence p2Name={oppName} onContinue={resumeAfterDeath} />
+        )}
+
+        {/* P2 died — the victim sees their own credits, then exit */}
+        {deathReason !== null && !ending && isGuest && (
+          <CreditsOverlay
+            lines={victimLines(reasonToCause(deathReason), deathDay)}
+            onExit={onExit}
           />
         )}
 
@@ -614,14 +678,19 @@ export default function GameScreen({
           </div>
         )}
 
-        {/* P1 died — host sees their own ending, exit only */}
-        {p1Died && isHost && !ending && (
-          <P1DeathHostScreen reason={p1DeathReason} p2Name={oppName} onExit={onExit} />
+        {/* P1 died — victim credits on host, survivor notice on guest */}
+        {p1Died && !ending && isHost && (
+          <CreditsOverlay
+            lines={victimLines(reasonToCause(p1DeathReason ?? 'mosquito'), deathDay)}
+            onExit={onExit}
+          />
         )}
-
-        {/* P1 died — guest keeps playing */}
-        {p1Died && isGuest && !ending && (
-          <P1DeathGuestScreen p1Name={oppName} onContinue={() => setP1Died(false)} />
+        {p1Died && !ending && isGuest && (
+          <CreditsOverlay
+            lines={noticeLines(oppName)}
+            onContinue={() => setP1Died(false)}
+            continueText="เล่นต่อไป จนกว่าเกมจะจบ &gt;"
+          />
         )}
 
         {/* touch controls — only on touch devices */}
@@ -736,126 +805,15 @@ export default function GameScreen({
         )}
 
         {/* ending credits */}
-        {ending && <EndingOverlay ending={ending} onExit={onExit} />}
+        {ending && <CreditsOverlay lines={ending} onExit={onExit} />}
       </div>
     </div>
   )
 }
 
-function GuiltOverlay({ onContinue }: { onContinue: () => void }) {
-  const [step, setStep] = useState(0)
-  useEffect(() => {
-    if (step >= 3) return
-    const t = setTimeout(() => setStep((s) => s + 1), step === 2 ? 3200 : 2600)
-    return () => clearTimeout(t)
-  }, [step])
-  const lines = ['คุณฆ่าเค้าทำไม', 'เค้าทำอะไรผิด', 'คุณไม่มีความเป็นมนุษย์แล้วหรอ']
-  const done = step >= 3
-  return (
-    <div
-      className="absolute inset-0 z-40 bg-black flex flex-col items-center justify-center text-center px-6 gap-6 cursor-pointer"
-      onClick={() => !done && setStep((s) => s + 1)}
-    >
-      {lines.slice(0, Math.min(step + 1, 3)).map((l, i) => (
-        <p key={i} className="text-lg text-red-400 fadein leading-10">
-          {l}
-        </p>
-      ))}
-      {done && (
-        <div className="fadein">
-          <p className="text-[11px] text-neutral-300 leading-7 mb-10">เล่นต่อไป จนกว่าเกมจะจบ</p>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onContinue()
-            }}
-            className="text-[9px] border-2 border-neutral-600 px-4 py-2 text-neutral-300 hover:bg-neutral-800"
-          >
-            เล่นต่อ &gt;
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
+const reasonToCause = (r: DeathReason): DeathCause =>
+  r === 'attacked' || r === 'killed' ? 'player' : (r as DeathCause)
 
-function P2KilledScreen({ p1Name, onExit }: { p1Name: string; onExit: () => void }) {
-  return (
-    <div className="absolute inset-0 z-40 bg-black flex flex-col items-center justify-center text-center px-6">
-      <p className="text-lg text-red-500 slowfadein">คุณถูก {p1Name} ฆ่า</p>
-      <p className="text-[11px] text-neutral-400 leading-8 mt-8 slowfadein">
-        เค้าไม่เห็นใจคุณเลย
-        <br />
-        ไม่เป็นไร
-      </p>
-      <button
-        onClick={onExit}
-        className="mt-12 text-[9px] border-2 border-neutral-600 px-4 py-2 text-neutral-300 hover:bg-neutral-800"
-      >
-        ออกไปที่เมนูหลัก
-      </button>
-    </div>
-  )
-}
 
-function P1DeathHostScreen({
-  reason,
-  p2Name,
-  onExit,
-}: {
-  reason: DeathReason | null
-  p2Name: string
-  onExit: () => void
-}) {
-  const first =
-    reason === 'mosquito'
-      ? 'คุณถูกฆ่าโดยยุง'
-      : reason === 'starved'
-        ? 'คุณหิวจนตาย'
-        : `คุณถูก ${p2Name} ฆ่า`
-  return (
-    <div className="absolute inset-0 z-40 bg-black flex flex-col items-center justify-center text-center px-6">
-      <p className="text-lg text-red-500 slowfadein">{first}</p>
-      <p className="text-[11px] text-neutral-400 leading-8 mt-8 slowfadein max-w-md">
-        บางที {p2Name} อาจจะช่วยคุณได้ก็ได้นะ
-        <br />
-        แต่ทำไมเค้าถึงไม่ช่วยหล่ะ
-        <br />
-        เค้าเห็นใจคุณรึเปล่า?
-      </p>
-      <button
-        onClick={onExit}
-        className="mt-12 text-[9px] border-2 border-neutral-600 px-4 py-2 text-neutral-300 hover:bg-neutral-800"
-      >
-        ออกไปที่เมนูหลัก
-      </button>
-    </div>
-  )
-}
 
-function P1DeathGuestScreen({
-  p1Name,
-  onContinue,
-}: {
-  p1Name: string
-  onContinue: () => void
-}) {
-  return (
-    <div className="absolute inset-0 z-40 bg-black/95 flex flex-col items-center justify-center text-center px-6">
-      <p className="text-lg text-red-400 slowfadein">{p1Name} ตายแล้ว</p>
-      <p className="text-[11px] text-neutral-400 leading-8 mt-8 slowfadein max-w-md">
-        ทำไมคุณถึงไม่ช่วยเค้าหล่ะ
-        <br />
-        คุณอาจจะพยายามช่วยแล้วก็ได้
-        <br />
-        รึถ้าหากไม่ คุณก็ต้องเห็นใจเค้าบ้าง
-      </p>
-      <button
-        onClick={onContinue}
-        className="mt-12 text-[9px] border-2 border-neutral-600 px-4 py-2 text-neutral-300 hover:bg-neutral-800"
-      >
-        เล่นต่อไป จนกว่าเกมจะจบ &gt;
-      </button>
-    </div>
-  )
-}
+

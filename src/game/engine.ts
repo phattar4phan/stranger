@@ -20,6 +20,8 @@ export const HP_MAX_START = 5
 export const REGEN_TIME = 12 // +1 hp per 12s while hunger > 0
 export const STARVE_TIME = 10 // 0 hunger: -1 hp per 10s, 0 hp = death
 export const MOSQUITO_HIT = 5 // during the swarm: -1 hp every 5s
+// swarm size per day
+export const MOSQUITO_COUNT: Record<number, number> = { 2: 3, 3: 5, 4: 8, 5: 12, 6: 15, 7: 20 }
 export const SPAWN_EVERY = 4 // seconds between spawn rolls
 export const NODE_CAP = 22
 
@@ -102,9 +104,15 @@ export interface Snap {
   phase: 'playing' | 'paused' | 'ended'
   winnerP1: boolean
   helped: boolean
-  seq: { death: number; timeup: number; p1death: number }
+  seq: { death: number; timeup: number; p1death: number; gameover: number }
+  p1Cause: DeathCause | ''
+  p2Cause: DeathCause | ''
+  firstCause: DeathCause | ''
+  firstDead: 'p1' | 'p2' | ''
   toast: string
 }
+
+export type DeathCause = 'player' | 'mosquito' | 'starved' | 'neglect'
 
 export interface EngineOpts {
   multi?: boolean // host: P2 controlled by remote partner
@@ -139,6 +147,7 @@ export interface EngineCallbacks {
   onDistressEnd: (helped: boolean) => void
   onDeath: (reason: 'neglect' | 'attacked' | 'mosquito' | 'starved') => void
   onP1Death: (reason: 'mosquito' | 'starved' | 'killed') => void
+  onGameOver: () => void
   onTimeUp: () => void
   onHud: (s: HudState) => void
 }
@@ -232,7 +241,7 @@ export class Game {
   private starve2T = 0
   private mosqT = 0
   private giveCd = 0
-  private seq = { death: 0, timeup: 0, p1death: 0 }
+  private seq = { death: 0, timeup: 0, p1death: 0, gameover: 0 }
   private guestPhase: 'playing' | 'paused' | 'ended' = 'playing'
   private lastMosquitoDay = 0
   private mosquitoPulse = false
@@ -241,6 +250,12 @@ export class Game {
   p2Name = 'PLAYER 2'
   private p1Alive = true
   private p2GatherNode: Node | null = null
+  private p1Cause: DeathCause | '' = ''
+  private p2Cause: DeathCause | '' = ''
+  private firstCause: DeathCause | '' = ''
+  firstDead: 'p1' | 'p2' | '' = ''
+  private mosquitoes: { x: number; y: number; vx: number; vy: number }[] = []
+  private swarmDay = 0
   private hungerT = 0
   private regenT = 0
   private starveT = 0
@@ -255,7 +270,7 @@ export class Game {
   private p2Gather = 0 // remote gather progress 0..1
   private p2StealCd = 0
   private p2HitCd = 0
-  private seenSeq = { death: 0, timeup: 0, p1death: 0 }
+  private seenSeq = { death: 0, timeup: 0, p1death: 0, gameover: 0 }
   private p1Gather = 0
   private p1GatherNode: Node | null = null
   private attackAnim = 0
@@ -604,6 +619,7 @@ export class Game {
 
   // guest: predict own avatar's movement locally; snapshots correct drift
   private guestTick(dt: number) {
+    this.updateMosquitoes()
     if (this.guestPhase !== 'playing' || !this.p2Alive) return
     const a = this.p2
     const dx = (this.remote.r ? 1 : 0) - (this.remote.l ? 1 : 0)
@@ -679,7 +695,18 @@ export class Game {
       }
       // subtle red edge flash while they're around
       this.mosquitoPulse = day >= 2 && dayLeft <= 30 && !this.timeUpFired
+      // swarm arrives: spawn the day's mosquito count
+      if (this.mosquitoPulse && this.swarmDay !== day) {
+        this.swarmDay = day
+        this.spawnMosquitoes(MOSQUITO_COUNT[day] ?? 0)
+      } else if (!this.mosquitoPulse && this.mosquitoes.length > 0) {
+        this.mosquitoes = []
+        this.swarmDay = 0
+      }
     }
+
+    // mosquitoes buzz around
+    this.updateMosquitoes()
 
     // the swarm bites: alive players lose 1 hp every 5s while it lasts
     if (this.mosquitoPulse) {
@@ -1096,21 +1123,71 @@ export class Game {
     }
   }
 
+  private spawnMosquitoes(n: number) {
+    this.mosquitoes = []
+    for (let i = 0; i < n; i++) {
+      this.mosquitoes.push({
+        x: 10 + Math.random() * (W - 20),
+        y: 10 + Math.random() * (H - 20),
+        vx: (Math.random() - 0.5) * 3,
+        vy: (Math.random() - 0.5) * 3,
+      })
+    }
+  }
+
+  private updateMosquitoes() {
+    for (const m of this.mosquitoes) {
+      m.x += m.vx
+      m.y += m.vy
+      // erratic jitter + soft bounds
+      if (Math.random() < 0.1) m.vx = (Math.random() - 0.5) * 3
+      if (Math.random() < 0.1) m.vy = (Math.random() - 0.5) * 3
+      if (m.x < 4 || m.x > W - 4) m.vx *= -1
+      if (m.y < 4 || m.y > H - 4) m.vy *= -1
+      m.x = clamp(m.x, 2, W - 2)
+      m.y = clamp(m.y, 2, H - 2)
+    }
+  }
+
   private killP2(reason: 'neglect' | 'attacked' | 'mosquito' | 'starved') {
     this.p2Alive = false
+    this.p2Cause = reason === 'attacked' ? 'player' : reason
+    if (!this.firstCause) {
+      this.firstCause = this.p2Cause
+      this.firstDead = 'p2'
+    }
     this.distressActive = false
+    this.beep(90, 0.8, 'sawtooth', 0.08)
+    // second death = the story is over for both
+    if (!this.p1Alive) {
+      this.phase = 'ended'
+      this.seq.gameover++
+      this.cb.onGameOver()
+      return
+    }
     this.phase = 'paused'
     this.seq.death++
-    this.beep(90, 0.8, 'sawtooth', 0.08)
     this.cb.onDeath(reason)
   }
 
   private p1Death(reason: 'mosquito' | 'starved' | 'killed') {
     if (!this.p1Alive || this.timeUpFired) return
     this.p1Alive = false
+    this.p1Cause = reason === 'killed' ? 'player' : reason
+    if (!this.firstCause) {
+      this.firstCause = this.p1Cause
+      this.firstDead = 'p1'
+    }
+    this.beep(70, 1, 'sawtooth', 0.09)
+    // second death = the story is over for both
+    if (!this.p2Alive) {
+      this.phase = 'ended'
+      this.seq.gameover++
+      this.cb.onGameOver()
+      return
+    }
     // world keeps running — the other player must survive to day 7
     this.seq.p1death++
-    this.beep(70, 1, 'sawtooth', 0.09)
     this.cb.onP1Death(reason)
   }
 
@@ -1145,6 +1222,10 @@ export class Game {
       attackAnim: this.attackAnim,
       p1Attacking: this.attackAnim > 0,
       phase: this.phase,
+      p1Cause: this.p1Cause,
+      p2Cause: this.p2Cause,
+      firstCause: this.firstCause,
+      firstDead: this.firstDead,
       winnerP1: this.p1Won(),
       helped: this.helpedOnce,
       seq: { ...this.seq },
@@ -1189,13 +1270,29 @@ export class Game {
     this.toast = s.toast
     this.toastT = s.toast ? 0.4 : 0
     this.guestPhase = s.phase
+    this.p1Cause = s.p1Cause
+    this.p2Cause = s.p2Cause
+    this.firstCause = s.firstCause
+    // guest keeps its own cosmetic mosquito swarm in sync with the host's
+    const day = Math.min(TOTAL_DAYS, Math.floor(this.elapsed / DAY_LENGTH) + 1)
+    if (s.mosquito && this.swarmDay !== day) {
+      this.swarmDay = day
+      this.spawnMosquitoes(MOSQUITO_COUNT[day] ?? 0)
+    } else if (!s.mosquito && this.mosquitoes.length > 0) {
+      this.mosquitoes = []
+      this.swarmDay = 0
+    }
+    if (s.seq.gameover > this.seenSeq.gameover) {
+      this.seenSeq.gameover = s.seq.gameover
+      this.cb.onGameOver()
+    }
     if (s.seq.death > this.seenSeq.death) {
       this.seenSeq.death = s.seq.death
-      this.cb.onDeath('neglect')
+      this.cb.onDeath(s.p2Cause === 'player' ? 'attacked' : (s.p2Cause as 'mosquito' | 'starved' | 'neglect'))
     }
     if (s.seq.p1death > this.seenSeq.p1death) {
       this.seenSeq.p1death = s.seq.p1death
-      this.cb.onP1Death('mosquito')
+      this.cb.onP1Death(s.p1Cause === 'player' ? 'killed' : (s.p1Cause as 'mosquito' | 'starved'))
     }
     if (s.seq.timeup > this.seenSeq.timeup) {
       this.seenSeq.timeup = s.seq.timeup
@@ -1344,6 +1441,16 @@ export class Game {
               ? '#8b5a2b'
               : '#7f8c8d'
       c.fillRect(d.x - 2, d.y - 2, 4, 4)
+    }
+
+    // mosquitoes — dark body, flickering wings
+    const wingOn = Math.floor(performance.now() / 60) % 2 === 0
+    for (const m of this.mosquitoes) {
+      c.fillStyle = wingOn ? '#c8c8c8' : '#8a8a8a'
+      c.fillRect(m.x - 3, m.y - 2, 2, 2)
+      c.fillRect(m.x + 1, m.y - 2, 2, 2)
+      c.fillStyle = '#1a1a1a'
+      c.fillRect(m.x - 1, m.y - 1, 2, 3)
     }
 
     // gather progress
