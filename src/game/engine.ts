@@ -283,6 +283,8 @@ export class Game {
   private helpedOnce = false
   private toast = ''
   private toastT = 0
+  private oppToast = ''
+  private oppToastT = 0
   private timeUpFired = false
   private hudT = 0
   private drops: { x: number; y: number; type: Gatherable }[] = []
@@ -327,14 +329,14 @@ export class Game {
   sell(item: Item) {
     const price = SELL_PRICE[item] ?? 0
     if (price <= 0) {
-      this.say('ไม่มีใครซื้อของพิษ', 2)
+      this.say('ไม่มีใครซื้อของพิษ', 2, 'self')
       return
     }
     if (this.p1Inv[item] <= 0) return
     this.p1Inv[item]--
     this.coins += price
     this.beep(760, 0.06)
-    this.say(`+${price} เหรียญ`, 1.2)
+    this.say(`+${price} เหรียญ`, 1.2, 'self')
   }
 
   buy(what: 'weapon' | 'hp' | 'hunger' | Food) {
@@ -344,11 +346,11 @@ export class Game {
     else if (what === 'hunger') price = HUNGER_UP_PRICE
     else price = FOOD_PRICE[what]
     if (what === 'weapon' && this.weaponTier >= WEAPONS.length - 1) {
-      this.say('ดาบดีที่สุดแล้ว', 2)
+      this.say('ดาบดีที่สุดแล้ว', 2, 'self')
       return
     }
     if (this.coins < price) {
-      this.say('เหรียญไม่พอ', 1.5)
+      this.say('เหรียญไม่พอ', 1.5, 'self')
       return
     }
     this.coins -= price
@@ -361,16 +363,16 @@ export class Game {
     } else if (what === 'hp') {
       this.maxHp++
       this.hp++
-      this.say('HP สูงสุด +1', 2)
+      this.say('HP สูงสุด +1', 2, 'self')
     } else if (what === 'hunger') {
       this.maxHunger++
       this.hunger++
-      this.say('ความหิวสูงสุด +1', 2)
+      this.say('ความหิวสูงสุด +1', 2, 'self')
     } else {
       // food is eaten the moment it's bought
       this.hunger = Math.min(this.maxHunger, this.hunger + FOOD_HUNGER[what])
       this.beep(520, 0.08, 'triangle')
-      this.say(`กิน ${THAI[what]} +${FOOD_HUNGER[what]} หิว`, 1.5)
+      this.say(`กิน ${THAI[what]} +${FOOD_HUNGER[what]} หิว`, 1.5, 'self')
     }
     this.beep(880, 0.08)
   }
@@ -380,13 +382,13 @@ export class Game {
     this.p1Inv[food]--
     this.hunger = Math.min(this.maxHunger, this.hunger + FOOD_HUNGER[food])
     this.beep(520, 0.08, 'triangle')
-    this.say(`+${FOOD_HUNGER[food]} หิว`, 1.2)
+    this.say(`+${FOOD_HUNGER[food]} หิว`, 1.2, 'self')
   }
 
   helpDistress() {
     if (!this.distressActive) return
     if (gatherTotal(this.p1Inv) <= 0 && this.coins === 0) {
-      this.say('คุณไม่มีอะไรจะให้', 2)
+      this.say('คุณไม่มีอะไรจะให้', 2, 'self')
       return
     }
     // give a strawberry if you have one, else any gatherable
@@ -404,13 +406,13 @@ export class Game {
     this.phase = 'playing'
     this.beep(660, 0.08)
     this.beep(880, 0.12)
-    this.say(`${this.p2Name} ปลอดภัยแล้ว`, 2.5)
+    this.say(`${this.p2Name} ปลอดภัยแล้ว`, 2.5, 'all')
     this.cb.onDistressEnd(true)
   }
 
   ignoreDistress() {
     if (!this.distressActive) return
-    this.say('...', 1.5)
+    this.say('...', 1.5, 'self')
   }
 
   resumeAfterDeath() {
@@ -421,7 +423,7 @@ export class Game {
     if (this.mode === m) return
     this.mode = m
     this.p1Gather = 0
-    this.say(m === 'fight' ? 'โหมดต่อสู้' : 'โหมดเก็บของ', 1.5)
+    this.say(m === 'fight' ? 'โหมดต่อสู้' : 'โหมดเก็บของ', 1.5, 'self')
     this.beep(m === 'fight' ? 300 : 600, 0.08)
   }
 
@@ -572,9 +574,19 @@ export class Game {
     }
   }
 
-  private say(msg: string, secs: number) {
-    this.toast = msg
-    this.toastT = secs
+  /**
+   * audience: 'self' = only this screen, 'opp' = only the other player's
+   * screen (via snapshot), 'all' = both.
+   */
+  private say(msg: string, secs: number, aud: 'self' | 'opp' | 'all' = 'self') {
+    if (aud !== 'opp') {
+      this.toast = msg
+      this.toastT = secs
+    }
+    if (aud !== 'self') {
+      this.oppToast = msg
+      this.oppToastT = secs
+    }
   }
 
   // ---------- loop ----------
@@ -611,7 +623,12 @@ export class Game {
       p2Total: self ? anyTotal(this.p1Inv) : anyTotal(this.p2Inv),
       p2Alive: self ? true : this.p2Alive,
       distressActive: this.distressActive,
-      toast: this.toastT > 0 ? this.toast : '',
+      toast:
+        this.toastT > 0
+          ? this.toast
+          : self && this.oppToastT > 0
+            ? this.oppToast
+            : '',
       name: self ? this.p2Name : this.p1Name,
       oppName: self ? this.p1Name : this.p2Name,
     }
@@ -653,7 +670,7 @@ export class Game {
       this.hungerT = 0
       if (this.hunger > 0) {
         this.hunger--
-        if (this.hunger === 0) this.say('หิวแล้ว! กินอาหาร [1-4]', 2.5)
+        if (this.hunger === 0) this.say('หิวแล้ว! กินอาหาร [1-4]', 2.5, 'self')
       }
     }
     // hunger regenerates health
@@ -673,7 +690,7 @@ export class Game {
         this.flash = 0.3
         this.flashColor = '200,0,0'
         this.beep(100, 0.2, 'sawtooth', 0.06)
-        this.say('หิวจนตาย HP กำลังลด', 2)
+        this.say('หิวจนตาย HP กำลังลด', 2, 'self')
         if (this.hp <= 0) {
           this.p1Death('starved')
           return
@@ -823,14 +840,14 @@ export class Game {
             this.flash = 0.6
             this.flashColor = '150,0,200'
             this.beep(80, 0.5, 'sawtooth', 0.08)
-            this.say('พิษ! HP เหลือ 1', 3)
+            this.say('พิษ! HP เหลือ 1', 3, 'self')
           }
           if (n.amount <= 0) {
             this.nodes = this.nodes.filter((m) => m !== n)
             this.p1GatherNode = null
             // 1:1 respawn: a new random resource (rarity-weighted) appears elsewhere
             this.rollSpawn()
-            this.say('+1 ' + THAI[n.type], 1)
+            this.say('+1 ' + THAI[n.type], 1, 'self')
           }
         }
       } else {
@@ -858,10 +875,10 @@ export class Game {
           this.flash = 0.25
           this.flashColor = '255,0,0'
           this.beep(180, 0.15, 'sawtooth', 0.05)
-          this.say(`ขโมย 1 ${THAI[r]} มา!`, 1.5)
+          this.say(`ขโมย 1 ${THAI[r]} มา!`, 1.5, 'self')
         } else {
           this.p1StealCd = 2
-          this.say('เค้าไม่มีอะไรจะขโมย', 1.5)
+          this.say('เค้าไม่มีอะไรจะขโมย', 1.5, 'self')
         }
       }
     }
@@ -884,10 +901,10 @@ export class Game {
           this.p2Inv[give]++
           this.giveCd = 1
           this.beep(700, 0.08, 'triangle')
-          this.say(`ให้ ${this.p2Name} 1 ${THAI[give]}`, 1.5)
+          this.say(`ให้ ${this.p2Name} 1 ${THAI[give]}`, 1.5, 'self')
         } else {
           this.giveCd = 1
-          this.say('ไม่มีอะไรจะให้', 1.2)
+          this.say('ไม่มีอะไรจะให้', 1.2, 'self')
         }
       }
     }
@@ -915,7 +932,7 @@ export class Game {
     this.flash = 0.3
     this.flashColor = '255,0,0'
     if (this.p2Hp <= 0) this.killP2('attacked')
-    else this.say(`${this.p2Name} บาดเจ็บ`, 1.2)
+    else this.say(`${this.p2Name} บาดเจ็บ`, 1.2, 'self')
   }
 
   private nearestNode(x: number, y: number): Node | null {
@@ -938,7 +955,7 @@ export class Game {
       this.hunger2T = 0
       if (this.hunger2 > 0) {
         this.hunger2--
-        if (this.hunger2 === 0) this.say(`${this.p2Name} กำลังหิว`, 2.5)
+        if (this.hunger2 === 0) this.say(`${this.p2Name} กำลังหิว`, 2.5, 'opp')
       }
     }
     if (this.hunger2 > 0 && this.hp2 < this.maxHp2) {
@@ -1017,7 +1034,7 @@ export class Game {
           this.p2StealCd = 5
           this.flash = 0.25
           this.flashColor = '255,0,0'
-          this.say(`${this.p2Name} ขโมยของคุณ!`, 1.5)
+          this.say(`${this.p2Name} ขโมยของคุณ!`, 1.5, 'self')
         }
       }
     }
@@ -1033,7 +1050,7 @@ export class Game {
         const ang = Math.atan2(this.p1.y - a.y, this.p1.x - a.x)
         this.p1.x = clamp(this.p1.x + Math.cos(ang) * 20, 8, W - 8)
         this.p1.y = clamp(this.p1.y + Math.sin(ang) * 20, 14, H - 6)
-        this.say(`${this.p2Name} ตบคุณ!`, 1.2)
+        this.say(`${this.p2Name} ตบคุณ!`, 1.2, 'self')
         if (this.hp <= 0) this.p1Death('killed')
       }
     }
@@ -1070,7 +1087,7 @@ export class Game {
           this.flash = 0.3
           this.flashColor = '255,0,0'
           this.beep(150, 0.2, 'sawtooth', 0.06)
-          this.say(`${this.p2Name} ขโมยของคุณ!`, 2)
+          this.say(`${this.p2Name} ขโมยของคุณ!`, 2, 'self')
         }
       }
     } else {
@@ -1229,7 +1246,7 @@ export class Game {
       winnerP1: this.p1Won(),
       helped: this.helpedOnce,
       seq: { ...this.seq },
-      toast: this.toastT > 0 ? this.toast : '',
+      toast: this.oppToastT > 0 ? this.oppToast : this.toastT > 0 && this.toast.length === 0 ? '' : '',
     }
   }
 
@@ -1315,7 +1332,7 @@ export class Game {
   devSkipToLastDay() {
     this.elapsed = GAME_DURATION - DAY_LENGTH
     this.lastMosquitoDay = TOTAL_DAYS - 1
-    this.say('DEV: วันที่ 7', 2)
+    this.say('DEV: วันที่ 7', 2, 'self')
   }
 
   devKillP2(by: 'mosquito' | 'player') {
@@ -1341,7 +1358,7 @@ export class Game {
       if (give) {
         this.p2Inv[give]--
         this.p1Inv[give]++
-        this.say(`${this.p2Name} ให้คุณ 1 ${THAI[give]}`, 1.5)
+        this.say(`${this.p2Name} ให้คุณ 1 ${THAI[give]}`, 1.5, 'self')
       }
       return
     }
@@ -1349,7 +1366,7 @@ export class Game {
       if (this.p2Inv[a.arg] > 0) {
         this.p2Inv[a.arg]--
         this.hunger2 = Math.min(this.maxHunger2, this.hunger2 + FOOD_HUNGER[a.arg])
-        this.say(`${this.p2Name} กิน ${THAI[a.arg]}`, 1.2)
+        this.say(`${this.p2Name} กิน ${THAI[a.arg]}`, 1.2, 'opp')
       }
       return
     }
@@ -1358,7 +1375,7 @@ export class Game {
       if (price <= 0 || this.p2Inv[a.arg] <= 0) return
       this.p2Inv[a.arg]--
       this.p2Coins += price
-      this.say(`${this.p2Name} ขาย ${THAI[a.arg]}`, 1.2)
+      this.say(`${this.p2Name} ขาย ${THAI[a.arg]}`, 1.2, 'opp')
       return
     }
     // buy
@@ -1483,6 +1500,17 @@ export class Game {
     } else {
       this.plate('R.I.P', this.p2.x, this.p2.y - 18, '#888')
     }
+
+    // floating health over both heads
+    const floatHp = (x: number, y: number, hp: number, max: number) => {
+      const w = max * 4
+      for (let i = 0; i < max; i++) {
+        c.fillStyle = i < hp ? '#e74c3c' : 'rgba(0,0,0,0.5)'
+        c.fillRect(x - w / 2 + i * 4, y, 3, 3)
+      }
+    }
+    floatHp(this.p1.x, this.p1.y - 31, this.hp, this.maxHp)
+    if (this.p2Alive) floatHp(this.p2.x, this.p2.y - 31, this.hp2, this.maxHp2)
 
     // distress marker
     if (this.distressActive) {

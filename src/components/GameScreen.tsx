@@ -418,6 +418,12 @@ export default function GameScreen({
           </span>
         </div>
 
+        {/* both names */}
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 bg-black/50 px-3 py-0.5 text-[9px] text-neutral-300 pointer-events-none">
+          {hud.name || 'ผู้เล่น 1'} <span className="text-red-400">✕</span>{' '}
+          {hud.oppName || 'ผู้เล่น 2'}
+        </div>
+
         {/* toast */}
         {hud.toast && !hud.distressActive && deathReason === null && !ending && (
           <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-black/80 px-3 py-1 text-[10px] text-yellow-300 pointer-events-none">
