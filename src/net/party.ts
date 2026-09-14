@@ -85,6 +85,7 @@ export class Party {
   private dead = false
   private suffix = 0
   private guestTarget = 0
+  private failCount = 0
   private helloTimer: ReturnType<typeof setInterval> | null = null
   onMsg: (m: PartyMsg) => void = () => {}
   onError: (e: string) => void = () => {}
@@ -145,6 +146,7 @@ export class Party {
     this.watchIce(conn)
     conn.on('open', () => {
       this.onStatus('ok')
+      this.failCount = 0
       this.send({ kind: 'hello' })
       // heartbeat hello: if the lane dies, reconnect
       if (this.helloTimer) clearInterval(this.helloTimer)
@@ -175,13 +177,17 @@ export class Party {
       return
     }
     if (type === 'peer-unavailable') {
-      // guest: PIN exists but this target isn't there (or wrong suffix) — scan on
+      // guest: host may still be registering — retry the same target a few
+      // times before scanning the next suffix
       if (this.role === 'guest') {
-        this.guestTarget = (this.guestTarget + 1) % (MAX_SUFFIX + 1)
+        this.failCount++
+        if (this.failCount % 4 === 0) {
+          this.guestTarget = (this.guestTarget + 1) % (MAX_SUFFIX + 1)
+        }
         this.onError('peer-unavailable')
         setTimeout(() => {
           if (!this.dead && (!this.conn || !this.conn.open)) this.dial()
-        }, 1500)
+        }, 1200)
         return
       }
     }

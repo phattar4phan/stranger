@@ -19,6 +19,7 @@ export default function JoinPartyScreen({
   const [stage, setStage] = useState<'pin' | 'name'>('pin')
   const [state, setState] = useState<'input' | 'waiting' | 'ok'>('input')
   const [err, setErr] = useState('')
+  const [nameWarn, setNameWarn] = useState(false)
   const [name, setName] = useState(initialName ?? '')
   const partyRef = useRef<Party | null>(null)
   const retryRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -58,8 +59,12 @@ export default function JoinPartyScreen({
   }
 
   const confirmName = () => {
+    if (!name.trim()) {
+      setNameWarn(true)
+      return
+    }
     if (retryRef.current) clearInterval(retryRef.current)
-    setTimeout(() => onStart(pin, name.trim() || 'ผู้เล่น 2'), 400)
+    setTimeout(() => onStart(pin, name.trim()), 400)
   }
 
   useEffect(() => {
@@ -128,6 +133,35 @@ export default function JoinPartyScreen({
           >
             เข้าเกม
           </button>
+
+          {/* forced name: warning popup */}
+          {nameWarn && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+              onClick={() => setNameWarn(false)}
+            >
+              <div
+                className="relative bg-black border-4 border-red-600 p-8 text-center"
+                style={{ boxShadow: '0 0 24px 6px rgba(255,0,0,0.7)' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => setNameWarn(false)}
+                  className="absolute top-2 right-2 text-red-500 text-lg leading-none hover:text-red-300"
+                  title="ปิด"
+                >
+                  ✕
+                </button>
+                <p className="text-red-400 text-[11px] leading-7">
+                  ต้องใส่ชื่อก่อนเข้าเกม!
+                  <br />
+                  <span className="text-neutral-500 text-[9px]">
+                    มิฉะนั้นจะไม่มีใครรู้ว่าใครคือใคร
+                  </span>
+                </p>
+              </div>
+            </div>
+          )}
         </>
       )}
 
